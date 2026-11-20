@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sandbox/Sandbox.csproj" />
+    <Project Path="src/Toolkit.AI/Toolkit.AI.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Toolkit.AI.Tests/Toolkit.AI.Tests.csproj" />
+  </Folder>
+</Solution>
