@@ -158,7 +158,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
       <span class="what">Asks DI for <code>IChatClient</code> and calls <code>GetResponseAsync(prompt)</code>, or <code>GetStreamingResponseAsync</code> to receive tokens as they arrive.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">LoggingChatClient</span><span class="when">Session 1</span>
-      <span class="what">From <code>.UseLogging()</code>. At Debug it writes "invoked" and "completed". At Trace, which Sandbox uses, it also writes the full prompt, the full response, token usage and Ollama's timings.</span></div>
+      <span class="what">From <code>.UseLogging()</code>. At Debug it writes "invoked" and "completed". At Trace, which Sandbox uses, it also writes the full prompt, the full response, token usage and Ollama's timings. Serilog sends these entries to the console and to a log file.</span></div>
     <div class="arrow"></div>
     <div class="layer future"><span class="name">VaultLoggingChatClient</span><span class="when">Session 5</span>
       <span class="what">Saves each prompt and answer into the vault's SQLite store.</span></div>
@@ -214,7 +214,22 @@ footer { color: var(--muted); font-size: 0.82rem; }
 </section>
 
 <section>
-  <div class="eyebrow">05 · Repository</div>
+  <div class="eyebrow">05 · Logging</div>
+  <h2>Where the logs go</h2>
+  <p>Code logs through <code>ILogger&lt;T&gt;</code> from Microsoft.Extensions.Logging. <code>AddSerilog</code> in <code>Program.cs</code> swaps in Serilog to write those entries out. The <code>Serilog</code> section of <code>appsettings.json</code> sets levels and destinations, so changing either needs no code.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Destination</th><th>Format</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Console</td><td>Coloured, <code>[09:45:13 VRB] Source</code> header</td><td>The terminal running the app</td></tr>
+      <tr><td>Rolling file</td><td>Full date, time and UTC offset</td><td><code>logs/sandbox-YYYYMMDD.log</code> under the folder you ran from (repo root for <code>dotnet run</code>). A new file each day; the last 14 are kept. Git ignores the folder.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Levels: <code>Default: Warning</code> keeps the framework quiet, and an override sets <code>Microsoft.Extensions.AI</code> to <code>Verbose</code>, Serilog's name for Trace. To read only the model calls later, open the log file or follow it with <code>Get-Content logs\sandbox-*.log -Wait</code>.</p>
+  <p><b>Later: OpenTelemetry and the Aspire dashboard.</b> Logs are text. Traces add structure: a <code>.UseOpenTelemetry()</code> layer in the pipeline would record each call as a span with model, tokens and duration as fields, and the Aspire dashboard would show them as a clickable timeline. Planned for when routing makes "which provider answered, and how fast" worth seeing. It needs Docker for the dashboard.</p>
+</section>
+
+<section>
+  <div class="eyebrow">06 · Repository</div>
   <h2>How the repo is organised</h2>
   <div class="tree-wrap">
 <pre>local-toolkit/
@@ -223,6 +238,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
 ├─ Directory.Packages.props    all NuGet versions
 ├─ LocalToolkit.slnx           solution (XML format)
 ├─ docs/architecture.html      this page
+├─ logs/                       Serilog files (git-ignored)
 ├─ src/
 │  ├─ Toolkit.AI/              class library
 │  │  ├─ ToolkitAIOptions.cs
@@ -244,7 +260,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
 </section>
 
 <section>
-  <div class="eyebrow">06 · Measured</div>
+  <div class="eyebrow">07 · Measured</div>
   <h2>Session 1 run</h2>
   <div class="stat-row">
     <div class="stat"><div class="v">57.4 s</div><div class="l">First call: model loaded from disk into GPU</div></div>
@@ -261,7 +277,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
 </section>
 
 <section>
-  <div class="eyebrow">07 · Glossary</div>
+  <div class="eyebrow">08 · Glossary</div>
   <h2>Terms used in the code</h2>
   <dl>
     <dt>IChatClient</dt><dd>The vendor-neutral chat interface in Microsoft.Extensions.AI. It has two methods, one for a whole response and one for a stream.</dd>
@@ -270,12 +286,13 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <dt>GetService&lt;T&gt;()</dt><dd>Walks down the pipeline to find a layer of type T. The tests use it to confirm Ollama is innermost.</dd>
     <dt>Options pattern</dt><dd>Binds a config section to a class (<code>IOptions&lt;ToolkitAIOptions&gt;</code>). <code>ValidateOnStart</code> makes bad config fail when the app starts instead of on first use.</dd>
     <dt>Central Package Management</dt><dd><code>Directory.Packages.props</code> holds every package version. A <code>.csproj</code> lists package names only.</dd>
+    <dt>Serilog</dt><dd>A logging library that sits behind <code>ILogger</code>. Sinks are its destinations (console, file, later Seq or OpenTelemetry). Output templates set the line format.</dd>
     <dt>Generic Host</dt><dd><code>Host.CreateApplicationBuilder</code>: configuration, logging and DI in one object. Workers (S9) and Blazor apps (S5, S13) use the same model.</dd>
   </dl>
 </section>
 
 <section>
-  <div class="eyebrow">08 · Next</div>
+  <div class="eyebrow">09 · Next</div>
   <h2>Session 2: router and fallback</h2>
   <p>Add a cloud <code>IChatClient</code>, write <code>RoutingChatClient</code> to try providers in the order <code>appsettings.json</code> lists, and log every call to SQLite. The pipeline above gains its first dashed layer. Done when the same call succeeds silently through Ollama with Wi-Fi off.</p>
 </section>

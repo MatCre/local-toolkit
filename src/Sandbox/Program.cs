@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Serilog;
 using Toolkit.AI;
 
 // The generic host gives us configuration, logging and DI, the same plumbing an
@@ -18,6 +19,13 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 // user secrets (Development only) -> environment variables -> command line.
 // appsettings.Local.json is git-ignored and holds machine-specific overrides.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+
+// Serilog replaces the default console logger. Code still logs through ILogger<T>;
+// Serilog decides how it looks and where it goes (console + rolling file), driven
+// entirely by the "Serilog" section of appsettings.json.
+builder.Services.AddSerilog((services, logger) => logger
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(services));
 
 builder.Services.AddToolkitAI(builder.Configuration);
 

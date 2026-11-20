@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # Machine-specific settings (see plan: Moving to the laptop)
 appsettings.Local.json
 *.db
+
+# Serilog rolling log files
+logs/
