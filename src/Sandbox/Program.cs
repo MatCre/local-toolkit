@@ -33,19 +33,13 @@ var prompt = args.Length > 0
 Console.WriteLine($"> {prompt}\n");
 
 var stopwatch = Stopwatch.StartNew();
-UsageDetails? usage = null;
 
-// Streaming prints tokens as the model produces them instead of waiting for the full reply.
-await foreach (var update in chat.GetStreamingResponseAsync(prompt))
-{
-    Console.Write(update.Text);
-
-    foreach (var usageContent in update.Contents.OfType<UsageContent>())
-    {
-        usage = usageContent.Details;
-    }
-}
+// GetResponseAsync waits for the whole reply, so Trace logging writes one entry for the
+// request and one for the complete response. GetStreamingResponseAsync would print tokens
+// as they arrive, but logs one entry per chunk.
+var response = await chat.GetResponseAsync(prompt);
 
 stopwatch.Stop();
-Console.WriteLine($"\n\n[{stopwatch.Elapsed.TotalSeconds:F1}s, " +
-                  $"{usage?.InputTokenCount ?? 0} in / {usage?.OutputTokenCount ?? 0} out tokens]");
+Console.WriteLine(response.Text);
+Console.WriteLine($"\n[{stopwatch.Elapsed.TotalSeconds:F1}s, {response.ModelId}, " +
+                  $"{response.Usage?.InputTokenCount ?? 0} in / {response.Usage?.OutputTokenCount ?? 0} out tokens]");

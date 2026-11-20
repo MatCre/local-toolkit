@@ -155,10 +155,10 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <div class="legend"><span class="lg-built">Built</span><span class="lg-local">Runs on your machine</span><span class="lg-future">Planned</span></div>
   <div class="pipe">
     <div class="layer caller"><span class="name">Your code: Sandbox / Vault / Cards …</span><span class="when">caller</span>
-      <span class="what">Asks DI for <code>IChatClient</code> and calls <code>GetStreamingResponseAsync(prompt)</code>.</span></div>
+      <span class="what">Asks DI for <code>IChatClient</code> and calls <code>GetResponseAsync(prompt)</code>, or <code>GetStreamingResponseAsync</code> to receive tokens as they arrive.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">LoggingChatClient</span><span class="when">Session 1</span>
-      <span class="what">From <code>.UseLogging()</code>. Writes "invoked" and "completed" at Debug level. That's the <code>dbug:</code> lines you see in the console.</span></div>
+      <span class="what">From <code>.UseLogging()</code>. At Debug it writes "invoked" and "completed". At Trace, which Sandbox uses, it also writes the full prompt, the full response, token usage and Ollama's timings.</span></div>
     <div class="arrow"></div>
     <div class="layer future"><span class="name">VaultLoggingChatClient</span><span class="when">Session 5</span>
       <span class="what">Saves each prompt and answer into the vault's SQLite store.</span></div>
@@ -192,7 +192,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <li><div><b>Registration.</b> <code>AddToolkitAI(config)</code> binds the <code>ToolkitAI</code> section to <code>ToolkitAIOptions</code>, registers validation, and registers a factory for the <code>IChatClient</code> pipeline. Nothing is constructed yet.</div></li>
     <li><div><b>Build the container.</b> <code>builder.Build()</code> freezes the registrations.</div></li>
     <li><div><b>Resolve.</b> <code>GetRequiredService&lt;IChatClient&gt;()</code> runs the factory: it reads the options, which triggers validation, creates <code>OllamaApiClient</code>, then wraps it in <code>LoggingChatClient</code>.</div></li>
-    <li><div><b>Call.</b> <code>await foreach</code> over <code>GetStreamingResponseAsync</code> prints each chunk as it arrives. The final chunk carries a <code>UsageContent</code> with token counts.</div></li>
+    <li><div><b>Call.</b> <code>await chat.GetResponseAsync(prompt)</code> waits for the whole reply. The <code>ChatResponse</code> it returns holds the text, the model ID and <code>Usage</code> token counts. The streaming version, <code>GetStreamingResponseAsync</code>, shows tokens sooner, but Trace logging then writes one entry per chunk, so Sandbox doesn't use it.</div></li>
   </ol>
 </section>
 
@@ -252,7 +252,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="stat"><div class="v">100% GPU</div><div class="l"><code>ollama ps</code>: 4.8 GB, 4096 context</div></div>
     <div class="stat"><div class="v">3 / 3</div><div class="l">Wiring tests passing</div></div>
   </div>
-  <p>Cold starts are what a local fallback costs. Session 2's router should allow a long timeout for the first Ollama call, or warm the model at startup.</p>
+  <p>At Trace, Ollama reports its own timing. One warm call took 0.41s inside Ollama, but 2.7s end to end; the rest is the app starting up: the host, JIT compilation and the first HTTP connection. Cold starts are what a local fallback costs. Session 2's router should allow a long timeout for the first Ollama call, or warm the model at startup.</p>
 </section>
 
 <section class="callout">
