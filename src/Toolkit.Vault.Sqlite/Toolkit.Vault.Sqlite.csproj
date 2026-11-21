@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IVaultStore on SQLite, with FTS5 full-text search. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Toolkit.Vault\Toolkit.Vault.csproj" />
+    <ProjectReference Include="..\Toolkit.Storage.Sqlite\Toolkit.Storage.Sqlite.csproj" />
+  </ItemGroup>
+
+</Project>

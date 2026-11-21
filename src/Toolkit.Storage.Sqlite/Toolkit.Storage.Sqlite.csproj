@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- SQLite plumbing shared by the *.Sqlite adapter projects: open a file, create its tables once. -->
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+</Project>

@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Toolkit.AI.Caching;
+using Toolkit.AI.Sqlite;
 
 namespace Toolkit.AI.Tests;
 

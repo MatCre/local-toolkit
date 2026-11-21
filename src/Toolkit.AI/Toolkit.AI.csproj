@@ -1,10 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The AI layer's core. Storage is reached only through IAiCallLog and IDistributedCache;
+    the implementations live in adapter projects such as Toolkit.AI.Sqlite.
+  -->
   <ItemGroup>
-    <PackageReference Include="Dapper" />
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="OllamaSharp" />
   </ItemGroup>
+
 </Project>

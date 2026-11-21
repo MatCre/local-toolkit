@@ -13,9 +13,15 @@ using Toolkit.AI.Routing;
 namespace Toolkit.AI;
 
 /// <summary>
-/// The single entry point other projects use: <c>services.AddToolkitAI(config)</c>.
-/// Callers then ask DI for <see cref="IChatClient"/> and never see which vendor answers.
+/// The single entry point other projects use. Callers then ask DI for <see cref="IChatClient"/>
+/// and never see which vendor answers or where data is stored.
 /// </summary>
+/// <example>
+/// <code>
+/// services.AddToolkitAI(configuration)   // the pipeline, routing, budget and cache logic
+///         .AddToolkitAISqlite();         // where the call log and cache are stored
+/// </code>
+/// </example>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
@@ -33,21 +39,9 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ToolkitAIOptions>, ToolkitAIOptionsValidator>());
 
         // 2. Supporting services. TryAdd lets an app or a test register its own version first.
+        //    Storage is not registered here: a storage adapter such as AddToolkitAISqlite() provides
+        //    IAiCallLog and the response cache's IDistributedCache.
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IAiCallLog>(sp =>
-        {
-            var callLog = Options(sp).CallLog;
-            return callLog.Enabled ? new SqliteAiCallLog(callLog.DatabasePath) : NullAiCallLog.Instance;
-        });
-        services.TryAddKeyedSingleton<IDistributedCache>(ResponseCacheKey, (sp, _) =>
-        {
-            var cache = Options(sp).Cache;
-            return new SqliteDistributedCache(
-                cache.DatabasePath,
-                TimeSpan.FromHours(cache.ExpirationHours),
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<ILogger<SqliteDistributedCache>>());
-        });
 
         // 3. The pipeline. AddChatClient takes the innermost client. Each .Use...() wraps what
         //    comes after it, so the first one listed is the outermost layer.
@@ -62,7 +56,7 @@ public static class ServiceCollectionExtensions
                 var logger = sp.GetRequiredService<ILogger<ToolkitRoutingChatClient>>();
                 return new ToolkitRoutingChatClient(
                     ChatProviderFactory.Create(Options(sp), logger),
-                    sp.GetRequiredService<IAiCallLog>(),
+                    CallLog(sp),
                     logger,
                     sp.GetRequiredService<TimeProvider>());
             })
@@ -71,13 +65,30 @@ public static class ServiceCollectionExtensions
             .Use((inner, sp) => Options(sp).Budget.MonthlyCapUsd is { } cap
                 ? new BudgetChatClient(
                     inner,
-                    sp.GetRequiredService<IAiCallLog>(),
+                    CallLog(sp),
                     cap,
                     sp.GetRequiredService<ILogger<BudgetChatClient>>(),
                     sp.GetRequiredService<TimeProvider>())
                 : inner);
 
         return services;
+    }
+
+    /// <summary>
+    /// The registered call log, or one that records nothing when ToolkitAI:CallLog:Enabled is false.
+    /// A missing registration is an error, not a silent no-op: the budget cap reads its spending
+    /// from the call log, so quietly logging nothing would also quietly switch the cap off.
+    /// </summary>
+    private static IAiCallLog CallLog(IServiceProvider sp)
+    {
+        if (!Options(sp).CallLog.Enabled)
+        {
+            return NullAiCallLog.Instance;
+        }
+
+        return sp.GetService<IAiCallLog>() ?? throw new InvalidOperationException(
+            "The AI call log is enabled but no storage is registered. Add a storage adapter after " +
+            "AddToolkitAI, e.g. services.AddToolkitAI(config).AddToolkitAISqlite(), or set ToolkitAI:CallLog:Enabled=false.");
     }
 
     private static IChatClient CreateCache(IChatClient inner, IServiceProvider sp)
@@ -88,7 +99,10 @@ public static class ServiceCollectionExtensions
             return inner;
         }
 
-        var storage = sp.GetRequiredKeyedService<IDistributedCache>(ResponseCacheKey);
+        var storage = sp.GetKeyedService<IDistributedCache>(ResponseCacheKey) ?? throw new InvalidOperationException(
+            "The AI response cache is enabled but no storage is registered. Add a storage adapter after " +
+            "AddToolkitAI, e.g. services.AddToolkitAI(config).AddToolkitAISqlite(), or set ToolkitAI:Cache:Enabled=false.");
+
         return new ToolkitCachingChatClient(inner, storage, cache.NormalizeKeys);
     }
 

@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Toolkit.AI\Toolkit.AI.csproj" />
+    <ProjectReference Include="..\Toolkit.AI.Sqlite\Toolkit.AI.Sqlite.csproj" />
   </ItemGroup>
 
   <ItemGroup>

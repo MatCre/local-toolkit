@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The vault's core: models and the IVaultStore contract. No database code and no database
+    packages. Storage lives in adapter projects (Toolkit.Vault.Sqlite today), so a new provider
+    means a new adapter, not changes here or in the code that uses the vault.
+  -->
+
+</Project>

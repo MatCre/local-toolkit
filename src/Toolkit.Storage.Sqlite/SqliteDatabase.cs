@@ -1,14 +1,14 @@
 using Dapper;
 using Microsoft.Data.Sqlite;
 
-namespace Toolkit.AI.Storage;
+namespace Toolkit.Storage.Sqlite;
 
 /// <summary>
 /// One SQLite file plus the SQL that creates its tables. Opening a connection runs that SQL
 /// the first time only, so callers never have to think about whether the tables exist yet.
 /// Shared by the call log and the response cache.
 /// </summary>
-internal sealed class SqliteDatabase(string path, string schemaSql)
+public sealed class SqliteDatabase(string path, string schemaSql)
 {
     private readonly Lock _initLock = new();
     private volatile bool _initialized;

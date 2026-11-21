@@ -76,7 +76,10 @@ public sealed class CallLogOptions
 {
     public bool Enabled { get; set; } = true;
 
-    /// <summary>SQLite file for the call log. Relative paths resolve against the current directory.</summary>
+    /// <summary>
+    /// Where the storage adapter keeps the call log. For the SQLite adapter, a file path; relative
+    /// paths resolve against the current directory.
+    /// </summary>
     public string DatabasePath { get; set; } = "data/toolkit-ai.db";
 }
 
@@ -94,7 +97,7 @@ public sealed class CacheOptions
     /// <summary>When on, an identical request (same messages and options) is answered from the cache.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>SQLite file for cached responses. Delete it to clear the cache.</summary>
+    /// <summary>Where the storage adapter keeps cached responses. For the SQLite adapter, a file path: delete it to clear the cache.</summary>
     public string DatabasePath { get; set; } = "data/response-cache.db";
 
     /// <summary>How long a cached answer stays valid.</summary>

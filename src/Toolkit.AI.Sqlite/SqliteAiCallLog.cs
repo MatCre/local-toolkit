@@ -1,8 +1,9 @@
 using System.Globalization;
 using Dapper;
-using Toolkit.AI.Storage;
+using Toolkit.AI.CallLog;
+using Toolkit.Storage.Sqlite;
 
-namespace Toolkit.AI.CallLog;
+namespace Toolkit.AI.Sqlite;
 
 /// <summary>
 /// Appends call records to an <c>ai_calls</c> table in a SQLite file. Open the file in

@@ -7,6 +7,7 @@ using Toolkit.AI.Budget;
 using Toolkit.AI.Caching;
 using Toolkit.AI.CallLog;
 using Toolkit.AI.Routing;
+using Toolkit.AI.Sqlite;
 
 namespace Toolkit.AI.Tests;
 
@@ -25,13 +26,18 @@ public class AddToolkitAITests
         ["ToolkitAI:Providers:ollama:TimeoutSeconds"] = "120",
     };
 
-    private static ServiceProvider BuildProvider(Dictionary<string, string?> settings)
+    private static ServiceProvider BuildProvider(Dictionary<string, string?> settings, bool withStorage = true)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IAiCallLog>(new InMemoryCallLog()); // keep tests off the disk
+        services.AddSingleton<IAiCallLog>(new InMemoryCallLog()); // registered first, so the adapter's TryAdd keeps it
         services.AddToolkitAI(config);
+        if (withStorage)
+        {
+            services.AddToolkitAISqlite(); // supplies the cache store; nothing touches disk until it's used
+        }
+
         return services.BuildServiceProvider();
     }
 
@@ -104,6 +110,29 @@ public class AddToolkitAITests
 
         Assert.Null(chat.GetService<DistributedCachingChatClient>());
         Assert.Null(chat.GetService<BudgetChatClient>()); // no MonthlyCapUsd set
+    }
+
+    [Fact]
+    public void Says_what_to_add_when_no_storage_adapter_is_registered()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(TwoProviders).Build();
+        var services = new ServiceCollection().AddLogging();
+        services.AddToolkitAI(config); // no AddToolkitAISqlite(), no IAiCallLog
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IChatClient>());
+
+        Assert.Contains("AddToolkitAISqlite", ex.Message);
+    }
+
+    [Fact]
+    public void Needs_no_storage_when_call_log_and_cache_are_off()
+    {
+        using var provider = BuildProvider(
+            With(("ToolkitAI:CallLog:Enabled", "false"), ("ToolkitAI:Cache:Enabled", "false")),
+            withStorage: false);
+
+        Assert.NotNull(provider.GetRequiredService<IChatClient>());
     }
 
     [Fact]

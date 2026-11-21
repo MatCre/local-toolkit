@@ -131,6 +131,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <span class="chip ok">Session 1 done · first local model call</span>
     <span class="chip ok">Session 2 done · router and fallback</span>
     <span class="chip ok">Session 3 done · budget cap and cache</span>
+    <span class="chip ok">Session 4 built · answer vault CLI</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -270,13 +271,26 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  │  └─ RoutingHints.cs
 │  │  ├─ Budget/BudgetChatClient.cs
 │  │  ├─ Caching/
-│  │  │  ├─ SqliteDistributedCache.cs     the store
 │  │  │  ├─ ToolkitCachingChatClient.cs   key normalization, hit marking
 │  │  │  └─ CacheKeyNormalizer.cs
-│  │  ├─ CallLog/
-│  │  │  ├─ IAiCallLog.cs
-│  │  │  └─ SqliteAiCallLog.cs
-│  │  └─ Storage/SqliteDatabase.cs  shared: open file, create tables once
+│  │  └─ CallLog/IAiCallLog.cs   the storage contract (port)
+│  ├─ Toolkit.AI.Sqlite/       adapter: AI storage on SQLite
+│  │  ├─ SqliteAiCallLog.cs
+│  │  ├─ SqliteDistributedCache.cs
+│  │  └─ …Extensions.cs        AddToolkitAISqlite()
+│  ├─ Toolkit.Storage.Sqlite/  shared by the SQLite adapters
+│  │  └─ SqliteDatabase.cs     open a file, create its tables once
+│  ├─ Toolkit.Vault/           core (Project 2): no database code
+│  │  ├─ IVaultStore.cs        the storage contract (port)
+│  │  ├─ VaultEntry.cs         models + input rules
+│  │  └─ SearchText.cs         how text splits into words
+│  ├─ Toolkit.Vault.Sqlite/    adapter: vault on SQLite + FTS5
+│  │  ├─ SqliteVaultStore.cs
+│  │  └─ FtsQuery.cs           words → safe FTS5 query
+│  ├─ Toolkit.Vault.Cli/       the `vault` command
+│  │  ├─ Program.cs            commands and options
+│  │  ├─ VaultCommands.cs      what each command does
+│  │  └─ ConsoleOutput.cs      colours, highlighting
 │  └─ Sandbox/                 console app
 │     ├─ Program.cs
 │     └─ appsettings.json
@@ -287,12 +301,18 @@ footer { color: var(--muted); font-size: 0.82rem; }
       ├─ SqliteAiCallLogTests.cs
       ├─ BudgetChatClientTests.cs
       ├─ ResponseCacheTests.cs
-      └─ Fakes.cs              scripted fake providers</pre>
+      └─ Fakes.cs              scripted fake providers
+   └─ Toolkit.Vault.Tests/     xUnit
+      ├─ VaultStoreContractTests.cs  what any IVaultStore must do
+      ├─ SqliteVaultStoreTests.cs    runs the contract on SQLite
+      ├─ SearchTextTests.cs
+      └─ FtsQueryTests.cs</pre>
     <div class="notes">
       <div><b>Toolkit.AI</b> is a library, not an app. It has no <code>Main</code> and no config files of its own. The app that uses it supplies configuration.</div>
       <div><b>Sandbox</b> is a scratch app for trying the layer by hand. Later tools are separate apps that reference Toolkit.AI the same way.</div>
       <div><b>Tests</b> never call a real model, so they pass offline and in CI. The router tests use <code>FakeChatClient</code>, which can be told to fail, stall or answer, to prove fallback, timeouts, cancellation and cost estimates. The wiring tests prove options bind, a cloud provider with no key is skipped, and bad config fails at startup.</div>
       <div><b>Routing/</b> is the only folder that names vendor SDK types (OpenAI, OllamaSharp). Everything outside it sees <code>IChatClient</code>.</div>
+      <div><b>Core and adapter projects.</b> <code>Toolkit.AI</code> and <code>Toolkit.Vault</code> contain no database code. Each <code>*.Sqlite</code> project implements their storage interfaces on SQLite. See "The data layer" below.</div>
       <div><b>Project references</b> point one way: Sandbox → Toolkit.AI ← Tests. Toolkit.AI never references an app.</div>
       <div><b>.slnx</b> is the XML solution format, the default since the .NET 10 SDK. It's readable and merges cleanly in Git.</div>
     </div>
@@ -334,13 +354,89 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <p>A cache hit doesn't count against the 50 free requests a day. A cached answer carries the provider name and token counts of the call that first produced it, so at first a hit looked exactly like a fresh openrouter call. Now the caching layer marks hits, and the Sandbox prints <code>[0.2s, from cache, no provider called; first answered by openrouter -> …]</code>. The budget cap can't be shown on free models, where every cost is $0, so a unit test proves it: with $5 spent and a $1 cap, the request goes to the local model and the cloud fake is never called.</p>
 </section>
 
+<section>
+  <div class="eyebrow">08 · Answer vault</div>
+  <h2>How the vault stores and finds things</h2>
+  <p>The vault is a SQLite file with two parts: a normal <code>entries</code> table holding your text, and an <b>FTS5 full-text index</b> over it. The index works like a book's index: for each word, it lists the entries containing it, so a search never reads every entry. Triggers keep the two in step automatically.</p>
+  <div class="pipe">
+    <div class="layer caller"><span class="name">vault add / search / show / list / remove</span><span class="when">Toolkit.Vault.Cli</span>
+      <span class="what">System.CommandLine parses the command line, generates <code>--help</code> and reports bad input. Text for <code>add</code> comes from <code>--file</code>, else piped input, else the clipboard (via TextCopy).</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">IVaultStore</span><span class="when">Toolkit.Vault</span>
+      <span class="what">The contract the CLI uses: add, get, list, search, remove. <code>SearchText</code> splits typed text into words the same way for every database.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">SqliteVaultStore + FtsQuery</span><span class="when">Toolkit.Vault.Sqlite</span>
+      <span class="what">The SQLite implementation, using Dapper. <code>FtsQuery</code> turns the words into a safe FTS5 query, so punctuation and words like NOT can never break it.</span></div>
+    <div class="arrow"></div>
+    <div class="fork">
+      <div><div class="layer local"><span class="name">entries</span><span class="when">table</span>
+        <span class="what">id, title, body, source, tags, created_utc. The source of truth.</span></div></div>
+      <div><div class="layer local"><span class="name">entries_fts</span><span class="when">FTS5 index</span>
+        <span class="what">Indexes title, body and tags with the <code>porter unicode61</code> tokenizer. Stores no text of its own; insert, update and delete triggers keep it current.</span></div></div>
+    </div>
+  </div>
+  <h3>What a search does</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>You type</th><th>Sent to FTS5</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>retry polly</code></td><td><code>("retry" OR "retry"*) AND ("polly" OR "polly"*)</code></td><td>Every word must match. Quoting makes each one a plain word.</td></tr>
+      <tr><td><code>retry</code></td><td>finds "retries", "retrying"</td><td>The porter stemmer reduces words to a common root.</td></tr>
+      <tr><td><code>sqli</code></td><td>finds "SQLite"</td><td>The <code>*</code> form matches half-typed words.</td></tr>
+      <tr><td><code>C# foo-bar NOT</code></td><td><code>"C"</code>, <code>"foo"</code>, <code>"bar"</code>, <code>"NOT"</code></td><td>Punctuation separates words; operators become plain words.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Results are ranked by <b>BM25</b>, a standard relevance score that favours rare words and short fields. A match in the title counts 10× a body match, and a tag match 5×. The excerpt under each result comes from FTS5's <code>snippet()</code>, with matched words in yellow.</p>
+  <p><b>A bug the tests caught:</b> the first version joined the bracketed groups with spaces. FTS5 accepts spaces as AND between plain words, but not between brackets, so every multi-word search failed with a syntax error. The punctuation tests failed before it ever reached you; the fix was an explicit <code>AND</code>.</p>
+  <h3>Using it</h3>
+<pre>vault add --title "Retry with Polly" --tags "dotnet,resilience"   # text from the clipboard
+Get-Content notes.md | vault add --title "Notes"                  # piped text
+vault add --file .\snippet.cs --tags csharp
+vault search retry polly
+vault show 12
+vault list
+vault remove 12</pre>
+  <p>Until it's installed as a tool, run it as <code>dotnet run --project src/Toolkit.Vault.Cli -- search retry</code>. The vault lives in one file per user, <code>%LOCALAPPDATA%\local-toolkit\vault.db</code>, the same whichever folder you run it from. Use <code>--db</code> or the <code>TOOLKIT_VAULT_DB</code> environment variable for a different file. The project is set up to pack as a .NET global tool, so it can be installed once as a plain <code>vault</code> command.</p>
+</section>
+
+<section>
+  <div class="eyebrow">08b · The data layer</div>
+  <h2>Ports and adapters: swapping databases later</h2>
+  <p>The toolkit's core code never talks to a database directly. It talks to small interfaces, the <b>ports</b>. Each database gets its own <b>adapter</b> project that implements them. Today every adapter is SQLite; moving to EF Core, SQL Server or Postgres means adding an adapter, not changing the core or the apps.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Port (in the core)</th><th>Used by</th><th>SQLite adapter today</th><th>A SQL Server adapter would use</th></tr></thead>
+    <tbody>
+      <tr><td><code>IVaultStore</code></td><td>vault CLI; later the Blazor page and auto-capture</td><td><code>SqliteVaultStore</code>: FTS5</td><td>EF Core or Dapper, plus SQL Server full-text search (<code>CONTAINS</code>, <code>FORMSOF</code>)</td></tr>
+      <tr><td><code>IAiCallLog</code></td><td>router (writes), budget (reads)</td><td><code>SqliteAiCallLog</code></td><td>EF Core: one table, a SUM query</td></tr>
+      <tr><td><code>IDistributedCache</code> (.NET's own)</td><td>response cache</td><td><code>SqliteDistributedCache</code></td><td>Microsoft's ready-made <code>Microsoft.Extensions.Caching.SqlServer</code></td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Project references point inward, toward the core:</b> <code>Toolkit.AI.Sqlite → Toolkit.AI</code> and <code>Toolkit.Vault.Sqlite → Toolkit.Vault</code>. The core projects reference no database package at all, so they can't accidentally start depending on SQLite.</p>
+  <p><b>One line picks the database.</b> Each app has a <b>composition root</b>, the place where it builds its objects:</p>
+<pre>// Sandbox: Program.cs
+builder.Services.AddToolkitAI(config)
+                .AddToolkitAISqlite();          // ← storage adapter
+
+// vault CLI: Program.cs
+IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</pre>
+  <p>If no adapter is registered, <code>AddToolkitAI</code> stops at startup with a message saying what to add. It doesn't quietly log nothing, because the budget cap reads its spending from the call log.</p>
+  <p><b>Contract tests keep adapters honest.</b> <code>VaultStoreContractTests</code> and <code>AiCallLogContractTests</code> are abstract classes holding the behaviour every implementation must have: every word must match, other forms of a word match, half-typed words match, best match first, and spending is totalled across time zones. Each adapter has a small subclass that runs them; the in-memory call log used in tests runs them too.</p>
+  <h3>Moving the vault to SQL Server later</h3>
+  <ol class="steps">
+    <li><div>Create <code>Toolkit.Vault.SqlServer</code> with a <code>SqlServerVaultStore : IVaultStore</code>, using EF Core or Dapper.</div></li>
+    <li><div>Set up a full-text catalog and index on the entries table. Build the <code>CONTAINS</code> query from <code>SearchText.Words(text)</code>, for example <code>FORMSOF(INFLECTIONAL, "retry") OR "retry*"</code> for each word.</div></li>
+    <li><div>Add <code>SqlServerVaultStoreTests : VaultStoreContractTests</code>, pointing at a test database, and make it pass. Ranking and snippets need SQL Server's own functions, since it has nothing like FTS5's <code>snippet()</code>.</div></li>
+    <li><div>Change the one line in the CLI's <code>Program.cs</code>, and write a one-off copy script to move existing entries across.</div></li>
+  </ol>
+  <p><b>Why not switch to EF Core now?</b> EF Core makes swapping databases easy for plain tables, but it doesn't hide full-text search: each database has its own, and EF Core would need raw SQL for it either way. Dapper keeps the SQL visible while you learn. The interfaces mean EF Core can come later, one adapter at a time.</p>
+</section>
+
 <section class="callout">
   <h3>PATH note: two dotnet installs</h3>
   <p><code>C:\Program Files\dotnet</code> (SDKs 8 and 10) comes before the dotnetup install (which also has 11.0.100) on PATH, so a plain <code>dotnet</code> picks the old one and fails in this repo with an SDK-not-found error. To fix it, move <code>%LOCALAPPDATA%\dotnetup\dotnet</code> above <code>C:\Program Files\dotnet</code> in your user PATH, or point your IDE's .NET path at the dotnetup folder.</p>
 </section>
 
 <section>
-  <div class="eyebrow">08 · Glossary</div>
+  <div class="eyebrow">09 · Glossary</div>
   <h2>Terms used in the code</h2>
   <dl>
     <dt>IChatClient</dt><dd>The vendor-neutral chat interface in Microsoft.Extensions.AI. It has two methods, one for a whole response and one for a stream.</dd>
@@ -354,6 +450,13 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <dt>Dapper</dt><dd>Adds <code>ExecuteAsync</code> and <code>QueryAsync</code> to a database connection. You write the SQL; it fills <code>@Name</code> parameters from an object's properties and turns results into C# objects. The call log uses it now, and the vault will in Session 4. EF Core, the full ORM alternative, would also generate the SQL and manage the tables, which is more than this needs.</dd>
     <dt>IDistributedCache</dt><dd>.NET's standard interface for a byte store with expiry: <code>Get</code>, <code>Set</code>, <code>Refresh</code> and <code>Remove</code>. The AI caching layer only knows this interface, so the store behind it could be memory, SQLite or Redis. Ours is registered under its own DI key, so it can't clash with a cache the app uses for something else.</dd>
     <dt>Cache key normalization</dt><dd>Changing the text used to build the key, never the text sent to the model. It costs a little precision: case and indentation in code drop out of the key. Turn it off with <code>ToolkitAI:Cache:NormalizeKeys=false</code>. A version marker in every key keeps normalized and plain keys from matching each other.</dd>
+    <dt>Ports and adapters</dt><dd>Also called hexagonal architecture. The core defines interfaces for what it needs from the outside world (ports); separate projects implement them for a particular technology (adapters). Swapping technology means swapping adapters.</dd>
+    <dt>Composition root</dt><dd>The one place in an app where objects are built and joined together, usually <code>Program.cs</code>. It's the only code that names concrete classes such as <code>SqliteVaultStore</code>; everything else uses the interfaces.</dd>
+    <dt>Contract tests</dt><dd>Tests written once against an interface, in an abstract class, and run against every implementation through a subclass. They define what "works" means for any adapter.</dd>
+    <dt>FTS5</dt><dd>SQLite's built-in full-text search. A virtual table that behaves like a table but is an index underneath. Query it with <code>MATCH</code>, rank results with <code>bm25()</code> and cut excerpts with <code>snippet()</code>.</dd>
+    <dt>External-content FTS table</dt><dd>An FTS5 index that reads its text from another table (<code>content='entries'</code>) instead of keeping a copy. It's smaller, but you must keep it in step with that table, which the triggers do.</dd>
+    <dt>Stemming</dt><dd>Reducing words to a root before indexing and searching, so "retries", "retrying" and "retry" all match. The porter tokenizer does this for English.</dd>
+    <dt>System.CommandLine</dt><dd>Microsoft's command-line parser. You declare commands, arguments and options as objects, and it handles parsing, <code>--help</code>, errors and exit codes.</dd>
     <dt>Fail closed</dt><dd>When a safety check can't get its answer, take the safe option. The budget layer goes local-only if it can't read the call log.</dd>
     <dt>FakeTimeProvider</dt><dd>A clock tests can set and move forward. It's how the tests check month boundaries and cache expiry without waiting. Production code takes a <code>TimeProvider</code> instead of reading <code>DateTime.Now</code> for this reason.</dd>
     <dt>User secrets</dt><dd>A JSON file in your user profile (<code>%APPDATA%\Microsoft\UserSecrets\local-toolkit-sandbox\</code>), outside the repo. It's merged into configuration like any other source.</dd>
@@ -363,10 +466,10 @@ footer { color: var(--muted); font-size: 0.82rem; }
 </section>
 
 <section>
-  <div class="eyebrow">09 · Next</div>
-  <h2>Session 4: answer vault</h2>
-  <p>Project 1 is complete. Project 2 starts a new library, <code>Toolkit.Vault</code>: a SQLite store of useful answers and snippets, with an FTS5 full-text index over title and body. It uses Dapper, which you met in the call log, and a <code>vault add</code> / <code>vault search</code> command-line tool built on <code>System.CommandLine</code>. Done when 10 real snippets are each found with a 2-word search.</p>
+  <div class="eyebrow">10 · Next</div>
+  <h2>Session 4 check, then Session 5: auto-capture and import</h2>
+  <p>Session 4 is done once you've added 10 real snippets to your own vault and found each one with a 2-word search. Session 5 then fills the vault for you: a <code>VaultLoggingChatClient</code> layer saves each prompt and answer going through the AI layer, an importer brings in your Claude data export, and a small Blazor page puts a search box in the browser. Done when a question you asked Claude last month turns up in a vault search.</p>
 </section>
 
-<footer>Last updated after Session 3 · Sat 21 Nov 2026</footer>
+<footer>Last updated after Session 4 · Sat 21 Nov 2026</footer>
 </main>

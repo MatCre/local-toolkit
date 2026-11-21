@@ -2,9 +2,9 @@ using System.Globalization;
 using Dapper;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
-using Toolkit.AI.Storage;
+using Toolkit.Storage.Sqlite;
 
-namespace Toolkit.AI.Caching;
+namespace Toolkit.AI.Sqlite;
 
 /// <summary>
 /// <see cref="IDistributedCache"/> stored in a SQLite file, so cached answers survive restarts.

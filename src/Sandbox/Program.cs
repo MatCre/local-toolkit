@@ -7,6 +7,7 @@ using Serilog;
 using Toolkit.AI;
 using Toolkit.AI.Caching;
 using Toolkit.AI.Routing;
+using Toolkit.AI.Sqlite;
 
 // The generic host gives us configuration, logging and DI, the same plumbing an
 // ASP.NET Core or Worker Service app uses, so later projects wire up identically.
@@ -36,7 +37,11 @@ builder.Services.AddSerilog((services, logger) => logger
     .ReadFrom.Configuration(builder.Configuration)
     .ReadFrom.Services(services));
 
-builder.Services.AddToolkitAI(builder.Configuration);
+// The AI layer itself, then where it stores its call log and response cache. Moving storage to
+// another database means swapping AddToolkitAISqlite() for that adapter's method.
+builder.Services
+    .AddToolkitAI(builder.Configuration)
+    .AddToolkitAISqlite();
 
 using var host = builder.Build();
 

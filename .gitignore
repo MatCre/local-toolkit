@@ -490,3 +490,6 @@ logs/
 
 # SQLite call log and other local data
 data/
+
+# Packed .NET tools (dotnet pack -o artifacts)
+artifacts/

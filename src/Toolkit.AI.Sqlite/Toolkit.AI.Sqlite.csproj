@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Storage for the AI layer on SQLite: the call log and the response cache. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Toolkit.AI\Toolkit.AI.csproj" />
+    <ProjectReference Include="..\Toolkit.Storage.Sqlite\Toolkit.Storage.Sqlite.csproj" />
+  </ItemGroup>
+
+</Project>

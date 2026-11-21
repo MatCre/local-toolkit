@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>vault</AssemblyName>
+    <RootNamespace>Toolkit.Vault.Cli</RootNamespace>
+
+    <!-- Packable as a .NET tool, so `vault` can be installed and run from any folder. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>vault</ToolCommandName>
+    <PackageId>Toolkit.Vault.Cli</PackageId>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="TextCopy" />
+  </ItemGroup>
+
+  <!--
+    The commands use IVaultStore (from Toolkit.Vault) only. The SQLite adapter is referenced
+    because Program.cs is the composition root: the one place that picks which store to create.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Toolkit.Vault\Toolkit.Vault.csproj" />
+    <ProjectReference Include="..\Toolkit.Vault.Sqlite\Toolkit.Vault.Sqlite.csproj" />
+  </ItemGroup>
+
+</Project>
