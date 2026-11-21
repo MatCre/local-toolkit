@@ -5,9 +5,20 @@ namespace Toolkit.Vault.Cli;
 /// <summary>What each command does. Each returns the process exit code: 0 for success, 1 for a problem.</summary>
 internal static class VaultCommands
 {
+    private const int PreviewLength = 70;
+
     public static async Task<int> AddAsync(
-        IVaultStore store, string? title, string? tags, string? source, FileInfo? file, CancellationToken ct)
+        IVaultStore store, string? title, string? tags, string? source, FileInfo? file, bool fromClipboard, bool allowSecret,
+        CancellationToken ct)
     {
+        // Where the text comes from is always something you asked for: a file, piped input, or
+        // --clipboard. The clipboard is never read by default, because it often holds a password
+        // or key copied for something else.
+        if (file is not null && fromClipboard)
+        {
+            return ConsoleOutput.Error("Use either --file or --clipboard, not both.");
+        }
+
         string? body;
         string readFrom;
 
@@ -21,30 +32,62 @@ internal static class VaultCommands
             body = await File.ReadAllTextAsync(file.FullName, ct);
             readFrom = file.FullName;
         }
-        else if (Console.IsInputRedirected)
-        {
-            // e.g.  Get-Content notes.md | vault add   or   echo "..." | vault add
-            body = await Console.In.ReadToEndAsync(ct);
-            readFrom = "stdin";
-        }
-        else
+        else if (fromClipboard)
         {
             body = await ClipboardService.GetTextAsync(ct);
             readFrom = "clipboard";
         }
+        else if (Console.IsInputRedirected)
+        {
+            // e.g.  Get-Content notes.md | vault add   or   echo "..." | vault add
+            body = await Console.In.ReadToEndAsync(ct);
+            readFrom = "piped input";
+        }
+        else
+        {
+            return ConsoleOutput.Error(
+                "Nothing to add. Say where the text comes from:\n" +
+                "  vault add --clipboard --title \"...\"       what you've copied\n" +
+                "  vault add --file notes.md                 a file\n" +
+                "  Get-Content notes.md | vault add          piped input");
+        }
 
         if (string.IsNullOrWhiteSpace(body))
         {
-            return ConsoleOutput.Error(readFrom == "clipboard"
-                ? "The clipboard has no text. Copy something first, or use --file or piped input."
-                : $"No text to add from {readFrom}.");
+            return ConsoleOutput.Error($"No text to add: the {readFrom} is empty.");
         }
 
-        var id = await store.AddAsync(new NewVaultEntry(title, body, source ?? readFrom, tags is null ? null : [tags]), ct);
-        var entry = (await store.GetAsync(id, ct))!;
+        long id;
+        try
+        {
+            var entry = new NewVaultEntry(title, body, source ?? readFrom, tags is null ? null : [tags]) { AllowSecrets = allowSecret };
+            id = await store.AddAsync(entry, ct);
+        }
+        catch (SecretDetectedException ex)
+        {
+            ConsoleOutput.Error($"Not saved: the {readFrom} looks like it contains a secret.");
+            foreach (var finding in ex.Findings)
+            {
+                ConsoleOutput.Error($"  {finding.Kind}: {finding.Masked}");
+            }
 
-        ConsoleOutput.Line($"Added {ConsoleOutput.Id(id)}  {ConsoleOutput.Bold(entry.Title)}");
-        ConsoleOutput.Line(ConsoleOutput.Dim($"       {entry.Body.Length:N0} characters from {readFrom}{FormatTags(entry.Tags, prefix: ", tags: ")}"));
+            ConsoleOutput.Error(
+                "Vault entries are plain text and are shown in search results. Keep keys in user secrets or a\n" +
+                "password manager. If this really should be stored, run the command again with --allow-secret.");
+            return 1;
+        }
+
+        var saved = (await store.GetAsync(id, ct))!;
+        ConsoleOutput.Line($"Added {ConsoleOutput.Id(id)}  {ConsoleOutput.Bold(saved.Title)}");
+        ConsoleOutput.Line(ConsoleOutput.Dim($"       {saved.Body.Length:N0} characters from {readFrom}{FormatTags(saved.Tags, prefix: ", tags: ")}"));
+
+        // Show what was actually stored, so a wrong paste is obvious now, not at the next search.
+        ConsoleOutput.Line(ConsoleOutput.Dim($"       \"{Preview(saved.Body)}\""));
+        if (allowSecret)
+        {
+            ConsoleOutput.Line(ConsoleOutput.Dim("       Stored with --allow-secret: it will appear in search results."));
+        }
+
         return 0;
     }
 
@@ -90,7 +133,7 @@ internal static class VaultCommands
         var entries = await store.ListRecentAsync(limit, ct);
         if (entries.Count == 0)
         {
-            ConsoleOutput.Line($"The vault is empty ({store.Location}). Copy some text and run: vault add --title \"...\"");
+            ConsoleOutput.Line($"The vault is empty ({store.Location}). Copy some text and run: vault add --clipboard --title \"...\"");
             return 0;
         }
 
@@ -115,6 +158,12 @@ internal static class VaultCommands
 
         ConsoleOutput.Line($"Removed {ConsoleOutput.Id(id)}  {entry.Title}");
         return 0;
+    }
+
+    private static string Preview(string body)
+    {
+        var oneLine = string.Join(' ', body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return oneLine.Length <= PreviewLength ? oneLine : oneLine[..(PreviewLength - 1)] + "…";
     }
 
     private static string FormatTags(IReadOnlyList<string> tags, string prefix) =>

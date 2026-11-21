@@ -21,8 +21,12 @@ namespace Toolkit.Vault;
 /// </remarks>
 public interface IVaultStore
 {
-    /// <summary>Adds an entry and returns its new id.</summary>
+    /// <summary>
+    /// Adds an entry and returns its new id. Implementations must call
+    /// <see cref="NewVaultEntry.Validate"/> first; the contract tests check that they do.
+    /// </summary>
     /// <exception cref="ArgumentException">The body is empty.</exception>
+    /// <exception cref="SecretDetectedException">The text looks like a secret and AllowSecrets is off.</exception>
     Task<long> AddAsync(NewVaultEntry entry, CancellationToken cancellationToken = default);
 
     Task<VaultEntry?> GetAsync(long id, CancellationToken cancellationToken = default);

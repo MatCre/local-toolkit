@@ -58,6 +58,28 @@ public abstract class VaultStoreContractTests
     }
 
     [Fact]
+    public async Task Refuses_text_that_looks_like_a_secret()
+    {
+        var fakeKey = "sk-" + "or-v1-" + new string('7', 20) + "abcdef0123456789abcdef0123456789abcdef01";
+
+        var ex = await Assert.ThrowsAsync<SecretDetectedException>(
+            () => Vault.AddAsync(new NewVaultEntry("Retry with Polly", fakeKey)));
+
+        Assert.Equal(0, await Vault.CountAsync()); // nothing was stored
+        Assert.DoesNotContain(fakeKey, ex.Message); // and the error doesn't repeat the secret
+    }
+
+    [Fact]
+    public async Task Stores_a_secret_only_when_explicitly_allowed()
+    {
+        var fakeKey = "sk-" + "or-v1-" + new string('7', 20) + "abcdef0123456789abcdef0123456789abcdef01";
+
+        var id = await Vault.AddAsync(new NewVaultEntry("Test key", fakeKey) { AllowSecrets = true });
+
+        Assert.Equal(fakeKey, (await Vault.GetAsync(id))?.Body);
+    }
+
+    [Fact]
     public async Task Finds_entries_by_title_body_or_tag()
     {
         var byTitle = await Add("Dapper basics", "Execute and query with parameters.");

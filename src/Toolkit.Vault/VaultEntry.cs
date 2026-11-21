@@ -12,6 +12,35 @@ public sealed record NewVaultEntry(string? Title, string Body, string? Source = 
 {
     private const int MaxTitleLength = 80;
 
+    /// <summary>
+    /// Store the entry even if it looks like it contains a secret. Off by default: entries are plain
+    /// text and appear in search results, so credentials belong in user secrets or a password manager.
+    /// </summary>
+    public bool AllowSecrets { get; init; }
+
+    /// <summary>
+    /// Checks the entry against the vault's rules. Every <see cref="IVaultStore"/> calls this before
+    /// storing anything, so the rules are the same whatever the database.
+    /// </summary>
+    /// <exception cref="ArgumentException">The body is empty.</exception>
+    /// <exception cref="SecretDetectedException">The text looks like it contains a secret and <see cref="AllowSecrets"/> is off.</exception>
+    public void Validate()
+    {
+        if (NormalizedBody.Length == 0)
+        {
+            throw new ArgumentException("An entry needs a body.", nameof(Body));
+        }
+
+        if (!AllowSecrets)
+        {
+            var findings = SecretScanner.Scan($"{Title}\n{Body}\n{Source}");
+            if (findings.Count > 0)
+            {
+                throw new SecretDetectedException(findings);
+            }
+        }
+    }
+
     /// <summary>The body with surrounding whitespace removed.</summary>
     public string NormalizedBody => Body.Trim();
 

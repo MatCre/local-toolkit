@@ -360,7 +360,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <p>The vault is a SQLite file with two parts: a normal <code>entries</code> table holding your text, and an <b>FTS5 full-text index</b> over it. The index works like a book's index: for each word, it lists the entries containing it, so a search never reads every entry. Triggers keep the two in step automatically.</p>
   <div class="pipe">
     <div class="layer caller"><span class="name">vault add / search / show / list / remove</span><span class="when">Toolkit.Vault.Cli</span>
-      <span class="what">System.CommandLine parses the command line, generates <code>--help</code> and reports bad input. Text for <code>add</code> comes from <code>--file</code>, else piped input, else the clipboard (via TextCopy).</span></div>
+      <span class="what">System.CommandLine parses the command line, generates <code>--help</code> and reports bad input. Text for <code>add</code> comes only from where you say: <code>--file</code>, <code>--clipboard</code> (via TextCopy), or piped input.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">IVaultStore</span><span class="when">Toolkit.Vault</span>
       <span class="what">The contract the CLI uses: add, get, list, search, remove. <code>SearchText</code> splits typed text into words the same way for every database.</span></div>
@@ -388,13 +388,24 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <p>Results are ranked by <b>BM25</b>, a standard relevance score that favours rare words and short fields. A match in the title counts 10× a body match, and a tag match 5×. The excerpt under each result comes from FTS5's <code>snippet()</code>, with matched words in yellow.</p>
   <p><b>A bug the tests caught:</b> the first version joined the bracketed groups with spaces. FTS5 accepts spaces as AND between plain words, but not between brackets, so every multi-word search failed with a syntax error. The punctuation tests failed before it ever reached you; the fix was an explicit <code>AND</code>.</p>
   <h3>Using it</h3>
-<pre>vault add --title "Retry with Polly" --tags "dotnet,resilience"   # text from the clipboard
-Get-Content notes.md | vault add --title "Notes"                  # piped text
-vault add --file .\snippet.cs --tags csharp
+<pre>vault add --clipboard --title "Retry with Polly" --tags "dotnet,resilience"   # what you've copied
+Get-Content notes.md | vault add --title "Notes"                              # piped text
+vault add --file .\snippet.cs --tags csharp                                   # a file
 vault search retry polly
 vault show 12
 vault list
 vault remove 12</pre>
+  <h3>Keeping secrets out</h3>
+  <p>Entries are plain text and appear in search results, so the vault refuses anything that looks like a credential. The first version read the clipboard whenever no other source was given. A stale clipboard holding an API key was saved as a "Retry with Polly" entry and then printed by the next search. Three changes followed:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Change</th><th>Where</th><th>What it prevents</th></tr></thead>
+    <tbody>
+      <tr><td>The clipboard is read only with <code>--clipboard</code></td><td>CLI</td><td>Saving whatever happened to be copied</td></tr>
+      <tr><td>Every add prints a preview of the stored text</td><td>CLI</td><td>A wrong paste going unnoticed until the next search</td></tr>
+      <tr><td><code>SecretScanner</code> refuses likely secrets unless <code>--allow-secret</code> is given</td><td>Vault core: <code>NewVaultEntry.Validate()</code>, called by every store</td><td>Keys stored by any route, including Session 5's automatic capture</td></tr>
+    </tbody>
+  </table></div>
+  <p>The scanner looks for two things. <b>Known formats:</b> providers deliberately prefix their keys (<code>sk-</code>, <code>ghp_</code>, <code>AKIA</code>, <code>AIza</code>, <code>xox…</code>) so leaks can be spotted; it also catches private key blocks, JWTs and passwords in connection strings. <b>Random-looking tokens:</b> 32 or more unbroken letters and digits with high <b>Shannon entropy</b>, a measure of how unpredictable each character is. Generated keys score about 5 bits per character, English about 3, and hex hashes at most 4, so git hashes pass. Errors only ever show a masked form, like <code>sk-or-v…3d4</code>. It's a safety net, not a guarantee.</p>
   <p>Until it's installed as a tool, run it as <code>dotnet run --project src/Toolkit.Vault.Cli -- search retry</code>. The vault lives in one file per user, <code>%LOCALAPPDATA%\local-toolkit\vault.db</code>, the same whichever folder you run it from. Use <code>--db</code> or the <code>TOOLKIT_VAULT_DB</code> environment variable for a different file. The project is set up to pack as a .NET global tool, so it can be installed once as a plain <code>vault</code> command.</p>
 </section>
 
@@ -450,6 +461,7 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
     <dt>Dapper</dt><dd>Adds <code>ExecuteAsync</code> and <code>QueryAsync</code> to a database connection. You write the SQL; it fills <code>@Name</code> parameters from an object's properties and turns results into C# objects. The call log uses it now, and the vault will in Session 4. EF Core, the full ORM alternative, would also generate the SQL and manage the tables, which is more than this needs.</dd>
     <dt>IDistributedCache</dt><dd>.NET's standard interface for a byte store with expiry: <code>Get</code>, <code>Set</code>, <code>Refresh</code> and <code>Remove</code>. The AI caching layer only knows this interface, so the store behind it could be memory, SQLite or Redis. Ours is registered under its own DI key, so it can't clash with a cache the app uses for something else.</dd>
     <dt>Cache key normalization</dt><dd>Changing the text used to build the key, never the text sent to the model. It costs a little precision: case and indentation in code drop out of the key. Turn it off with <code>ToolkitAI:Cache:NormalizeKeys=false</code>. A version marker in every key keeps normalized and plain keys from matching each other.</dd>
+    <dt>Shannon entropy</dt><dd>The average information per character in a piece of text, in bits. Random keys are high, words are low. The secret scanner uses it to tell generated tokens from ordinary long words.</dd>
     <dt>Ports and adapters</dt><dd>Also called hexagonal architecture. The core defines interfaces for what it needs from the outside world (ports); separate projects implement them for a particular technology (adapters). Swapping technology means swapping adapters.</dd>
     <dt>Composition root</dt><dd>The one place in an app where objects are built and joined together, usually <code>Program.cs</code>. It's the only code that names concrete classes such as <code>SqliteVaultStore</code>; everything else uses the interfaces.</dd>
     <dt>Contract tests</dt><dd>Tests written once against an interface, in an abstract class, and run against every implementation through a subclass. They define what "works" means for any adapter.</dd>

@@ -88,10 +88,7 @@ public sealed class SqliteVaultStore : IVaultStore
 
     public async Task<long> AddAsync(NewVaultEntry entry, CancellationToken cancellationToken = default)
     {
-        if (entry.NormalizedBody.Length == 0)
-        {
-            throw new ArgumentException("An entry needs a body.", nameof(entry));
-        }
+        entry.Validate(); // the vault's rules: a body, and no secrets unless allowed
 
         await using var connection = await _database.OpenAsync(cancellationToken);
         return await connection.ExecuteScalarAsync<long>(new CommandDefinition(

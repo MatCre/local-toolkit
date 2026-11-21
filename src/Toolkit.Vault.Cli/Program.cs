@@ -20,12 +20,15 @@ var titleOption = new Option<string?>("--title", "-t") { Description = "Title. D
 var tagsOption = new Option<string?>("--tags") { Description = "Labels, comma- or space-separated, e.g. \"dotnet,sqlite\"." };
 var sourceOption = new Option<string?>("--source", "-s") { Description = "Where it came from: claude, a URL, a book. Default: how the text was read." };
 var fileOption = new Option<FileInfo?>("--file", "-f") { Description = "Read the text from this file." };
-var add = new Command("add", "Add an entry. Text comes from --file, else from piped input, else from the clipboard.")
+var clipboardOption = new Option<bool>("--clipboard", "-c") { Description = "Read the text from the clipboard." };
+var allowSecretOption = new Option<bool>("--allow-secret") { Description = "Store the text even if it looks like it contains a key or password." };
+var add = new Command("add", "Add an entry from --file, --clipboard or piped input. Text that looks like a secret is refused.")
 {
-    titleOption, tagsOption, sourceOption, fileOption,
+    titleOption, tagsOption, sourceOption, fileOption, clipboardOption, allowSecretOption,
 };
 add.SetAction((parse, ct) => VaultCommands.AddAsync(
-    Store(parse), parse.GetValue(titleOption), parse.GetValue(tagsOption), parse.GetValue(sourceOption), parse.GetValue(fileOption), ct));
+    Store(parse), parse.GetValue(titleOption), parse.GetValue(tagsOption), parse.GetValue(sourceOption), parse.GetValue(fileOption),
+    parse.GetValue(clipboardOption), parse.GetValue(allowSecretOption), ct));
 
 // vault search
 var wordsArgument = new Argument<string[]>("words") { Description = "Words to find. Every word must match; endings and half-typed words are fine.", Arity = ArgumentArity.OneOrMore };
