@@ -1,0 +1,40 @@
+@page "/entry/{Id:long}"
+@inject IVaultStore Vault
+
+@if (_entry is null)
+{
+    <PageTitle>Not found · Vault</PageTitle>
+    <p><a href="">← Search</a></p>
+    <p>There's no entry #@Id.</p>
+}
+else
+{
+    <PageTitle>@_entry.Title · Vault</PageTitle>
+    <p><a href="javascript:history.back()">← Back</a></p>
+
+    <article>
+        <h1>@_entry.Title</h1>
+        <p class="meta">
+            #@_entry.Id · added @_entry.CreatedUtc.ToLocalTime().ToString("d MMM yyyy, HH:mm")
+            @if (_entry.Source is not null)
+            {
+                <text> · from @_entry.Source</text>
+            }
+            @foreach (var tag in _entry.Tags)
+            {
+                <a class="tag" href="?q=@Uri.EscapeDataString(tag)">#@tag</a>
+            }
+        </p>
+        @* Razor HTML-encodes @_entry.Body, so stored text is always shown as text, never run as markup. *@
+        <pre class="body">@_entry.Body</pre>
+    </article>
+}
+
+@code {
+    [Parameter]
+    public long Id { get; set; }
+
+    private VaultEntry? _entry;
+
+    protected override async Task OnInitializedAsync() => _entry = await Vault.GetAsync(Id);
+}

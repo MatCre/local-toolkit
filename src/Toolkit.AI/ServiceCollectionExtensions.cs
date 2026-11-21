@@ -46,10 +46,11 @@ public static class ServiceCollectionExtensions
         // 3. The pipeline. AddChatClient takes the innermost client. Each .Use...() wraps what
         //    comes after it, so the first one listed is the outermost layer.
         //
-        //    Request flow:  caller -> Logging -> Cache -> Budget -> Router -> openrouter | ollama
+        //    Request flow:  caller -> Logging -> Cache -> [extension layers] -> Budget -> Router -> openrouter | ollama
         //
         //    Logging sees everything, cache hits included. The cache sits outside the budget
         //    check, so a cached answer costs nothing and is never counted against the cap.
+        //    Extension layers (IToolkitChatLayer, e.g. vault capture) see only real calls.
         //    Cache and budget are skipped when config turns them off.
         services.AddChatClient(sp =>
             {
@@ -62,6 +63,9 @@ public static class ServiceCollectionExtensions
             })
             .UseLogging()
             .Use((inner, sp) => CreateCache(inner, sp))
+            .Use((inner, sp) => sp.GetServices<IToolkitChatLayer>()
+                .Reverse() // wrap from the inside out, so the first registered ends up outermost
+                .Aggregate(inner, (client, layer) => layer.Wrap(client, sp)))
             .Use((inner, sp) => Options(sp).Budget.MonthlyCapUsd is { } cap
                 ? new BudgetChatClient(
                     inner,

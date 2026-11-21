@@ -1,4 +1,5 @@
 using TextCopy;
+using Toolkit.Vault.Import;
 
 namespace Toolkit.Vault.Cli;
 
@@ -157,6 +158,50 @@ internal static class VaultCommands
         }
 
         ConsoleOutput.Line($"Removed {ConsoleOutput.Id(id)}  {entry.Title}");
+        return 0;
+    }
+
+    public static async Task<int> ImportClaudeAsync(IVaultStore store, FileInfo export, bool allowSecrets, CancellationToken ct)
+    {
+        if (!export.Exists)
+        {
+            return ConsoleOutput.Error($"File not found: {export.FullName}");
+        }
+
+        ConsoleOutput.Line($"Importing {export.Name} into {store.Location}");
+        var progress = new Progress<int>(count => ConsoleOutput.Progress($"  {count:N0} conversations read"));
+
+        ImportSummary summary;
+        try
+        {
+            summary = await ClaudeExportImporter.ImportAsync(store, export.FullName, allowSecrets, progress, ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or System.Text.Json.JsonException)
+        {
+            ConsoleOutput.ProgressDone();
+            return ConsoleOutput.Error($"Couldn't read that export: {ex.Message}");
+        }
+
+        ConsoleOutput.ProgressDone();
+        ConsoleOutput.Line($"Added {summary.Added:N0} conversations; {summary.AlreadyInVault:N0} were already in the vault.");
+
+        if (summary.Skipped.Count > 0)
+        {
+            ConsoleOutput.Line($"Skipped {summary.Skipped.Count:N0} that look like they contain a secret:");
+            foreach (var skipped in summary.Skipped.Take(20))
+            {
+                ConsoleOutput.Line(ConsoleOutput.Dim($"  {skipped.CreatedUtc.ToLocalTime():yyyy-MM-dd}  {skipped.Title}: {skipped.Reason}"));
+            }
+
+            if (summary.Skipped.Count > 20)
+            {
+                ConsoleOutput.Line(ConsoleOutput.Dim($"  …and {summary.Skipped.Count - 20:N0} more"));
+            }
+
+            ConsoleOutput.Line(ConsoleOutput.Dim("  To include them anyway, run the import again with --allow-secret."));
+        }
+
+        ConsoleOutput.Line(ConsoleOutput.Dim($"Imported conversations are tagged #{ClaudeExportImporter.ImportTag}. Try: vault search <words>"));
         return 0;
     }
 

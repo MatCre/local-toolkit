@@ -8,6 +8,8 @@ using Toolkit.AI;
 using Toolkit.AI.Caching;
 using Toolkit.AI.Routing;
 using Toolkit.AI.Sqlite;
+using Toolkit.Vault.AI;
+using Toolkit.Vault.Sqlite;
 
 // The generic host gives us configuration, logging and DI, the same plumbing an
 // ASP.NET Core or Worker Service app uses, so later projects wire up identically.
@@ -42,6 +44,15 @@ builder.Services.AddSerilog((services, logger) => logger
 builder.Services
     .AddToolkitAI(builder.Configuration)
     .AddToolkitAISqlite();
+
+// Save every question and answer into the vault: by default the same one the `vault` command
+// uses, or Vault:DatabasePath if set. Turn it off with "Vault:Capture": false.
+if (builder.Configuration.GetValue("Vault:Capture", defaultValue: true))
+{
+    builder.Services
+        .AddVaultSqlite(builder.Configuration["Vault:DatabasePath"])
+        .AddVaultCapture();
+}
 
 using var host = builder.Build();
 

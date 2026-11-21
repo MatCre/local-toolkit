@@ -19,6 +19,15 @@ public sealed record NewVaultEntry(string? Title, string Body, string? Source = 
     public bool AllowSecrets { get; init; }
 
     /// <summary>
+    /// An id from wherever the entry came from, e.g. "claude:conversation:&lt;uuid&gt;". At most one entry
+    /// can have a given external id, so an import run twice doesn't create duplicates.
+    /// </summary>
+    public string? ExternalId { get; init; }
+
+    /// <summary>When the content was originally created. Defaults to now; an import sets the original date.</summary>
+    public DateTimeOffset? CreatedUtc { get; init; }
+
+    /// <summary>
     /// Checks the entry against the vault's rules. Every <see cref="IVaultStore"/> calls this before
     /// storing anything, so the rules are the same whatever the database.
     /// </summary>
@@ -79,7 +88,8 @@ public sealed record VaultEntry(
     string Body,
     string? Source,
     IReadOnlyList<string> Tags,
-    DateTimeOffset CreatedUtc);
+    DateTimeOffset CreatedUtc,
+    string? ExternalId = null);
 
 /// <summary>One search hit: the entry without its full body, plus the matching excerpt.</summary>
 /// <param name="Snippet">Part of the body around the match, with matched words between the highlight markers.</param>

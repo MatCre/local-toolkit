@@ -27,9 +27,16 @@ public interface IVaultStore
     /// </summary>
     /// <exception cref="ArgumentException">The body is empty.</exception>
     /// <exception cref="SecretDetectedException">The text looks like a secret and AllowSecrets is off.</exception>
+    /// <remarks>
+    /// If <see cref="NewVaultEntry.ExternalId"/> is set and an entry with that id already exists,
+    /// nothing is added and the existing entry's id is returned. That makes imports safe to repeat.
+    /// </remarks>
     Task<long> AddAsync(NewVaultEntry entry, CancellationToken cancellationToken = default);
 
     Task<VaultEntry?> GetAsync(long id, CancellationToken cancellationToken = default);
+
+    /// <summary>The id of the entry with this external id, or null if there isn't one.</summary>
+    Task<long?> FindByExternalIdAsync(string externalId, CancellationToken cancellationToken = default);
 
     /// <summary>Newest first.</summary>
     Task<IReadOnlyList<VaultEntry>> ListRecentAsync(int limit = 20, CancellationToken cancellationToken = default);

@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Toolkit.Vault\Toolkit.Vault.csproj" />
     <ProjectReference Include="..\..\src\Toolkit.Vault.Sqlite\Toolkit.Vault.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Toolkit.Vault.AI\Toolkit.Vault.AI.csproj" />
   </ItemGroup>
 
 </Project>

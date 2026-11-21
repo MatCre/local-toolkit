@@ -131,7 +131,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <span class="chip ok">Session 1 done · first local model call</span>
     <span class="chip ok">Session 2 done · router and fallback</span>
     <span class="chip ok">Session 3 done · budget cap and cache</span>
-    <span class="chip ok">Session 4 built · answer vault CLI</span>
+    <span class="chip ok">Session 4 done · answer vault CLI</span>
+    <span class="chip ok">Session 5 built · capture, import, search page</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -167,11 +168,11 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="layer built"><span class="name">LoggingChatClient</span><span class="when">Session 1</span>
       <span class="what">From <code>.UseLogging()</code>. At Debug it writes "invoked" and "completed". At Trace, which Sandbox uses, it also writes the full prompt, the full response, token usage and Ollama's timings. Serilog sends these entries to the console and to a log file.</span></div>
     <div class="arrow"></div>
-    <div class="layer future"><span class="name">VaultLoggingChatClient</span><span class="when">Session 5</span>
-      <span class="what">Saves each prompt and answer into the vault's SQLite store.</span></div>
-    <div class="arrow"></div>
     <div class="layer built"><span class="name">ToolkitCachingChatClient</span><span class="when">Session 3</span>
       <span class="what">Microsoft.Extensions.AI's <code>DistributedCachingChatClient</code> with two additions. The key is built from normalized text: lower case, single spaces, no trailing . ? !, so "What is SQLite?" and "what is sqlite" share an entry; the model still receives the original text. And an answer served from the cache is marked <code>toolkit.cacheHit</code>, so callers can tell. On a hit, nothing further in runs. Storage is our <code>SqliteDistributedCache</code> in <code>data/response-cache.db</code>, kept for 7 days, so it survives restarts. Turn it off with <code>ToolkitAI:Cache:Enabled=false</code>.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">VaultCaptureChatClient</span><span class="when">Session 5</span>
+      <span class="what">Saves each question and answer into the vault, tagged <code>#ai-capture</code> with the provider and model. It sits inside the cache, so a cache hit is never saved twice. It's added from outside through the <code>IToolkitChatLayer</code> extension point, so Toolkit.AI has no reference to the vault. A request marked <code>WithoutVaultCapture()</code>, a failed call, or text that looks like a secret is never saved.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">BudgetChatClient</span><span class="when">Session 3</span>
       <span class="what">Totals this month's estimated cost from the call log (calendar month, your time zone). At or over <code>MonthlyCapUsd</code>, it adds a <code>toolkit.localOnly</code> hint to the request's options, and the router then tries local providers only. If spending can't be read, it plays safe and goes local. Left out when no cap is set.</span></div>
@@ -284,9 +285,16 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  ├─ IVaultStore.cs        the storage contract (port)
 │  │  ├─ VaultEntry.cs         models + input rules
 │  │  └─ SearchText.cs         how text splits into words
+│  │  └─ Import/               claude.ai export reader + importer
 │  ├─ Toolkit.Vault.Sqlite/    adapter: vault on SQLite + FTS5
-│  │  ├─ SqliteVaultStore.cs
-│  │  └─ FtsQuery.cs           words → safe FTS5 query
+│  │  ├─ SqliteVaultStore.cs   migrations, search, external ids
+│  │  ├─ FtsQuery.cs           words → safe FTS5 query
+│  │  └─ …Extensions.cs        AddVaultSqlite()
+│  ├─ Toolkit.Vault.AI/        bridge: AI answers → vault
+│  │  ├─ VaultCaptureChatClient.cs
+│  │  └─ …Extensions.cs        AddVaultCapture()
+│  ├─ Toolkit.Vault.Web/       Blazor search page (static rendering)
+│  │  └─ Components/Pages/     Home (search), Entry
 │  ├─ Toolkit.Vault.Cli/       the `vault` command
 │  │  ├─ Program.cs            commands and options
 │  │  ├─ VaultCommands.cs      what each command does
@@ -406,6 +414,17 @@ vault remove 12</pre>
     </tbody>
   </table></div>
   <p>The scanner looks for two things. <b>Known formats:</b> providers deliberately prefix their keys (<code>sk-</code>, <code>ghp_</code>, <code>AKIA</code>, <code>AIza</code>, <code>xox…</code>) so leaks can be spotted; it also catches private key blocks, JWTs and passwords in connection strings. <b>Random-looking tokens:</b> 32 or more unbroken letters and digits with high <b>Shannon entropy</b>, a measure of how unpredictable each character is. Generated keys score about 5 bits per character, English about 3, and hex hashes at most 4, so git hashes pass. Errors only ever show a masked form, like <code>sk-or-v…3d4</code>. It's a safety net, not a guarantee.</p>
+  <h3>Session 5: how the vault fills itself</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Route in</th><th>How</th><th>What lands in the vault</th></tr></thead>
+    <tbody>
+      <tr><td>Auto-capture</td><td><code>.AddVaultSqlite().AddVaultCapture()</code> in any app using the AI layer (the Sandbox does). Turn it off with <code>Vault:Capture=false</code>, or per request with <code>WithoutVaultCapture()</code>.</td><td>One entry per question: title = your question, body = question and answer, source = provider / model, tags <code>#ai-capture #openrouter</code></td></tr>
+      <tr><td>Claude export</td><td><code>vault import claude data-export.zip</code>. Safe to repeat: each conversation's id is stored as its external id, and anything already imported is skipped.</td><td>One entry per conversation, with its original date, the full transcript as "You:" / "Claude:", tag <code>#claude</code>. Conversations that look like they contain a key are skipped and listed.</td></tr>
+      <tr><td>By hand</td><td><code>vault add --clipboard / --file / piped</code></td><td>Whatever you choose</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Tested end to end:</b> a new Sandbox question was answered by OpenRouter and saved as entry #1. The same question again was a cache hit and wasn't saved twice. A sample export imported 2 conversations, a second import added 0, and "dapper sqlite" found the October conversation.</p>
+  <p><b>The search page</b>, <code>Toolkit.Vault.Web</code>, is Blazor with <b>static server rendering</b>: each page is plain HTML built on the server, and a search is an ordinary form that loads <code>/?q=words</code>, so searches can be bookmarked. Run it with <code>dotnet run --project src/Toolkit.Vault.Web</code> and open <code>http://localhost:5275</code>. Snippets are HTML-encoded before matched words are wrapped in <code>&lt;mark&gt;</code>, so nothing stored can inject markup. It's local only, with no login, so don't expose it on a network.</p>
   <p>Until it's installed as a tool, run it as <code>dotnet run --project src/Toolkit.Vault.Cli -- search retry</code>. The vault lives in one file per user, <code>%LOCALAPPDATA%\local-toolkit\vault.db</code>, the same whichever folder you run it from. Use <code>--db</code> or the <code>TOOLKIT_VAULT_DB</code> environment variable for a different file. The project is set up to pack as a .NET global tool, so it can be installed once as a plain <code>vault</code> command.</p>
 </section>
 
@@ -438,6 +457,7 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
     <li><div>Add <code>SqlServerVaultStoreTests : VaultStoreContractTests</code>, pointing at a test database, and make it pass. Ranking and snippets need SQL Server's own functions, since it has nothing like FTS5's <code>snippet()</code>.</div></li>
     <li><div>Change the one line in the CLI's <code>Program.cs</code>, and write a one-off copy script to move existing entries across.</div></li>
   </ol>
+  <p><b>Schema migrations.</b> Session 5 added an <code>external_id</code> column to a vault you were already using. Every SQLite store now passes an ordered list of migrations to <code>SqliteDatabase</code>. SQLite keeps a counter in each file, <code>PRAGMA user_version</code>; on open, the migrations the file hasn't had yet run in order, each in a transaction with its counter bump. A Session 4 vault (version 0, tables already there) is upgraded in place, and a test checks exactly that. Rule: never edit a migration that has shipped; add a new one. EF Core migrations work the same way, with generated C# instead of SQL.</p>
   <p><b>Why not switch to EF Core now?</b> EF Core makes swapping databases easy for plain tables, but it doesn't hide full-text search: each database has its own, and EF Core would need raw SQL for it either way. Dapper keeps the SQL visible while you learn. The interfaces mean EF Core can come later, one adapter at a time.</p>
 </section>
 
@@ -461,6 +481,9 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
     <dt>Dapper</dt><dd>Adds <code>ExecuteAsync</code> and <code>QueryAsync</code> to a database connection. You write the SQL; it fills <code>@Name</code> parameters from an object's properties and turns results into C# objects. The call log uses it now, and the vault will in Session 4. EF Core, the full ORM alternative, would also generate the SQL and manage the tables, which is more than this needs.</dd>
     <dt>IDistributedCache</dt><dd>.NET's standard interface for a byte store with expiry: <code>Get</code>, <code>Set</code>, <code>Refresh</code> and <code>Remove</code>. The AI caching layer only knows this interface, so the store behind it could be memory, SQLite or Redis. Ours is registered under its own DI key, so it can't clash with a cache the app uses for something else.</dd>
     <dt>Cache key normalization</dt><dd>Changing the text used to build the key, never the text sent to the model. It costs a little precision: case and indentation in code drop out of the key. Turn it off with <code>ToolkitAI:Cache:NormalizeKeys=false</code>. A version marker in every key keeps normalized and plain keys from matching each other.</dd>
+    <dt>IToolkitChatLayer</dt><dd>The AI layer's extension point. Another package registers one in DI, and <code>AddToolkitAI</code> places it between the cache and the budget check. Vault capture uses it, so the AI core never references the vault.</dd>
+    <dt>Schema migration</dt><dd>A numbered change to a database's structure, applied once per database file, in order. Here SQLite's <code>PRAGMA user_version</code> records how many have run.</dd>
+    <dt>Static server rendering</dt><dd>Blazor's simplest mode: components render to HTML on the server per request, with no live connection and no WebAssembly. Forms and links work like a classic website.</dd>
     <dt>Shannon entropy</dt><dd>The average information per character in a piece of text, in bits. Random keys are high, words are low. The secret scanner uses it to tell generated tokens from ordinary long words.</dd>
     <dt>Ports and adapters</dt><dd>Also called hexagonal architecture. The core defines interfaces for what it needs from the outside world (ports); separate projects implement them for a particular technology (adapters). Swapping technology means swapping adapters.</dd>
     <dt>Composition root</dt><dd>The one place in an app where objects are built and joined together, usually <code>Program.cs</code>. It's the only code that names concrete classes such as <code>SqliteVaultStore</code>; everything else uses the interfaces.</dd>
@@ -479,9 +502,9 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
 
 <section>
   <div class="eyebrow">10 · Next</div>
-  <h2>Session 4 check, then Session 5: auto-capture and import</h2>
-  <p>Session 4 is done once you've added 10 real snippets to your own vault and found each one with a 2-word search. Session 5 then fills the vault for you: a <code>VaultLoggingChatClient</code> layer saves each prompt and answer going through the AI layer, an importer brings in your Claude data export, and a small Blazor page puts a search box in the browser. Done when a question you asked Claude last month turns up in a vault search.</p>
+  <h2>Session 5 check, then Session 6: dotnet new templates</h2>
+  <p>Session 5 is done when a question you asked Claude last month turns up in a vault search. Request your export (claude.ai, Settings → Privacy → Export data), run <code>vault import claude</code> on the zip, and search for something you remember asking. Session 6 starts Project 3: a <code>dotnet new</code> template pack for the things you scaffold most, so boilerplate comes from a template instead of an AI call.</p>
 </section>
 
-<footer>Last updated after Session 4 · Sat 21 Nov 2026</footer>
+<footer>Last updated after Session 5 · Sat 21 Nov 2026</footer>
 </main>

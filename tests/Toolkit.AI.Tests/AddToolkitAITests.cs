@@ -113,6 +113,41 @@ public class AddToolkitAITests
     }
 
     [Fact]
+    public void Places_extension_layers_inside_the_cache_and_outside_the_budget_check()
+    {
+        var layer = new RecordingLayer();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(With(("ToolkitAI:Budget:MonthlyCapUsd", "1")))
+            .Build();
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton<IAiCallLog>(new InMemoryCallLog());
+        services.AddSingleton<IToolkitChatLayer>(layer);
+        services.AddToolkitAI(config).AddToolkitAISqlite();
+        using var provider = services.BuildServiceProvider();
+
+        var chat = provider.GetRequiredService<IChatClient>();
+
+        Assert.IsType<BudgetChatClient>(layer.WrappedClient);              // directly outside the budget check
+        Assert.NotNull(chat.GetService<ToolkitCachingChatClient>());       // and the cache is further out
+        Assert.Same(layer.Created, chat.GetService<RecordingLayer.Client>());
+    }
+
+    private sealed class RecordingLayer : IToolkitChatLayer
+    {
+        public IChatClient? WrappedClient { get; private set; }
+
+        public Client? Created { get; private set; }
+
+        public IChatClient Wrap(IChatClient inner, IServiceProvider services)
+        {
+            WrappedClient = inner;
+            return Created = new Client(inner);
+        }
+
+        public sealed class Client(IChatClient inner) : DelegatingChatClient(inner);
+    }
+
+    [Fact]
     public void Says_what_to_add_when_no_storage_adapter_is_registered()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(TwoProviders).Build();

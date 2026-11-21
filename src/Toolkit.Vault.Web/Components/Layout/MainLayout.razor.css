@@ -1,0 +1,12 @@
+.top {
+    padding: 1.25rem 0 0.5rem;
+}
+
+.brand {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: 0.02em;
+}

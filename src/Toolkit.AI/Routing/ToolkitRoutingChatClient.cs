@@ -185,20 +185,29 @@ public sealed class ToolkitRoutingChatClient : IChatClient
 
     /// <summary>
     /// Applies routing hints from outer layers. With <see cref="RoutingHints.LocalOnly"/> set,
-    /// only local providers are tried. Hints are removed from the options passed on, because
-    /// some clients send unknown AdditionalProperties to the server as extra request fields.
+    /// only local providers are tried. All toolkit.* hints are removed from the options passed on,
+    /// because some clients send unknown AdditionalProperties to the server as extra request fields.
     /// </summary>
     private (IReadOnlyList<ChatProvider> Providers, ChatOptions? Options) SelectProviders(ChatOptions? options)
     {
         if (options?.AdditionalProperties is not { } hints
-            || !hints.TryGetValue(RoutingHints.LocalOnly, out var localOnly)
-            || localOnly is not true)
+            || !hints.Keys.Any(k => k.StartsWith(RoutingHints.Prefix, StringComparison.Ordinal)))
         {
             return (_providers, options);
         }
 
+        var localOnly = hints.TryGetValue(RoutingHints.LocalOnly, out var value) && value is true;
+
         var forwarded = options.Clone();
-        forwarded.AdditionalProperties?.Remove(RoutingHints.LocalOnly);
+        foreach (var key in hints.Keys.Where(k => k.StartsWith(RoutingHints.Prefix, StringComparison.Ordinal)).ToList())
+        {
+            forwarded.AdditionalProperties!.Remove(key);
+        }
+
+        if (!localOnly)
+        {
+            return (_providers, forwarded);
+        }
 
         var local = _providers.Where(p => p.IsLocal).ToList();
         if (local.Count == 0)

@@ -100,6 +100,22 @@ public class BudgetChatClientTests
     }
 
     [Fact]
+    public async Task No_toolkit_hint_from_any_layer_reaches_a_provider()
+    {
+        var options = new ChatOptions();
+        options.AdditionalProperties = new()
+        {
+            ["toolkit.vault.skip"] = true,       // another layer's hint
+            ["toolkit.something.else"] = "x",
+            ["vendor.setting"] = 42,             // not ours: passed through untouched
+        };
+
+        await Pipeline(capUsd: 1.00m).GetResponseAsync("hi", options);
+
+        Assert.Equal(["vendor.setting"], _cloud.LastOptions?.AdditionalProperties?.Keys);
+    }
+
+    [Fact]
     public async Task Fails_clearly_when_over_the_cap_with_no_local_provider()
     {
         _log.Spent(5.00m, at: Now.AddDays(-3));

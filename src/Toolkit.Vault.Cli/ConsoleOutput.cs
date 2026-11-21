@@ -19,6 +19,24 @@ internal static partial class ConsoleOutput
         return 1;
     }
 
+    /// <summary>Rewrites the current line in place on a terminal; prints nothing when output is redirected.</summary>
+    public static void Progress(string text)
+    {
+        if (!Console.IsOutputRedirected)
+        {
+            Console.Write($"\r{text}");
+        }
+    }
+
+    /// <summary>Ends a progress line so the next output starts on a fresh line.</summary>
+    public static void ProgressDone()
+    {
+        if (!Console.IsOutputRedirected)
+        {
+            Console.WriteLine();
+        }
+    }
+
     public static string Id(long id) => Paint($"#{id,-4}", "36"); // cyan, padded so titles line up
 
     public static string Bold(string text) => Paint(text, "1");

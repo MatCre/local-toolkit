@@ -58,6 +58,40 @@ public abstract class VaultStoreContractTests
     }
 
     [Fact]
+    public async Task Adding_the_same_external_id_twice_keeps_one_entry()
+    {
+        var entry = new NewVaultEntry("Imported", "From somewhere else.") { ExternalId = "claude:conversation:abc" };
+
+        var first = await Vault.AddAsync(entry);
+        var second = await Vault.AddAsync(entry with { Body = "A newer copy." });
+
+        Assert.Equal(first, second);
+        Assert.Equal(1, await Vault.CountAsync());
+        Assert.Equal(first, await Vault.FindByExternalIdAsync("claude:conversation:abc"));
+        Assert.Equal("claude:conversation:abc", (await Vault.GetAsync(first))?.ExternalId);
+        Assert.Null(await Vault.FindByExternalIdAsync("claude:conversation:other"));
+    }
+
+    [Fact]
+    public async Task Entries_without_an_external_id_never_collide()
+    {
+        await Add("One", "first");
+        await Add("Two", "second");
+
+        Assert.Equal(2, await Vault.CountAsync());
+    }
+
+    [Fact]
+    public async Task Keeps_an_original_creation_date()
+    {
+        var original = new DateTimeOffset(2026, 10, 3, 8, 15, 0, TimeSpan.Zero);
+
+        var id = await Vault.AddAsync(new NewVaultEntry("Old chat", "From last month.") { CreatedUtc = original });
+
+        Assert.Equal(original, (await Vault.GetAsync(id))?.CreatedUtc);
+    }
+
+    [Fact]
     public async Task Refuses_text_that_looks_like_a_secret()
     {
         var fakeKey = "sk-" + "or-v1-" + new string('7', 20) + "abcdef0123456789abcdef0123456789abcdef01";

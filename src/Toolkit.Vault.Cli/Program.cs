@@ -50,9 +50,20 @@ var listLimitOption = new Option<int>("--limit", "-n") { Description = "How many
 var list = new Command("list", "Show the most recently added entries.") { listLimitOption };
 list.SetAction((parse, ct) => VaultCommands.ListAsync(Store(parse), parse.GetValue(listLimitOption), ct));
 
+// vault import claude <path>
+var exportArgument = new Argument<FileInfo>("export") { Description = "The .zip from claude.ai (Settings → Privacy → Export data), or the conversations.json inside it." };
+var importAllowSecretOption = new Option<bool>("--allow-secret") { Description = "Import conversations even if they look like they contain a key or password." };
+var importClaude = new Command("claude", "Import your claude.ai conversations, one entry each. Safe to repeat: only new conversations are added.")
+{
+    exportArgument, importAllowSecretOption,
+};
+importClaude.SetAction((parse, ct) => VaultCommands.ImportClaudeAsync(
+    Store(parse), parse.GetValue(exportArgument)!, parse.GetValue(importAllowSecretOption), ct));
+var import = new Command("import", "Bring in conversations from elsewhere.") { importClaude };
+
 var root = new RootCommand("Answer vault: keep useful answers and snippets, and find them again.")
 {
-    dbOption, add, search, show, list, remove,
+    dbOption, add, search, show, list, remove, import,
 };
 
 return await root.Parse(args).InvokeAsync();

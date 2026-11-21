@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vault-web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Toolkit.Vault.Web", "--launch-profile", "http"],
+      "port": 5275
+    }
+  ]
+}

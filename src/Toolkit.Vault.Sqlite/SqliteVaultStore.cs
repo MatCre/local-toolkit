@@ -53,8 +53,19 @@ public sealed class SqliteVaultStore : IVaultStore
         END;
         """;
 
+    // Migration 2 (Session 5): an id from the entry's origin, so imports can be repeated safely.
+    // The unique index is partial: any number of entries may have no external id.
+    private const string AddExternalIdSql = """
+        ALTER TABLE entries ADD COLUMN external_id TEXT;
+        CREATE UNIQUE INDEX ix_entries_external_id ON entries (external_id) WHERE external_id IS NOT NULL;
+        """;
+
+    // Applied in order; a file records how many it has had. Only ever add to the end.
+    private static readonly string[] Migrations = [SchemaSql, AddExternalIdSql];
+
     private const string SelectEntrySql = """
-        SELECT id AS Id, title AS Title, body AS Body, source AS Source, tags AS Tags, created_utc AS CreatedUtc
+        SELECT id AS Id, title AS Title, body AS Body, source AS Source, tags AS Tags, created_utc AS CreatedUtc,
+               external_id AS ExternalId
         FROM entries
         """;
 
@@ -76,7 +87,7 @@ public sealed class SqliteVaultStore : IVaultStore
 
     public SqliteVaultStore(string databasePath, TimeProvider? time = null)
     {
-        _database = new SqliteDatabase(databasePath, SchemaSql);
+        _database = new SqliteDatabase(databasePath, Migrations);
         _time = time ?? TimeProvider.System;
     }
 
@@ -90,11 +101,16 @@ public sealed class SqliteVaultStore : IVaultStore
     {
         entry.Validate(); // the vault's rules: a body, and no secrets unless allowed
 
+        if (entry.ExternalId is { } externalId && await FindByExternalIdAsync(externalId, cancellationToken) is { } existing)
+        {
+            return existing; // already imported: adding it again would be a duplicate
+        }
+
         await using var connection = await _database.OpenAsync(cancellationToken);
         return await connection.ExecuteScalarAsync<long>(new CommandDefinition(
             """
-            INSERT INTO entries (title, body, source, tags, created_utc)
-            VALUES (@Title, @Body, @Source, @Tags, @CreatedUtc);
+            INSERT INTO entries (title, body, source, tags, created_utc, external_id)
+            VALUES (@Title, @Body, @Source, @Tags, @CreatedUtc, @ExternalId);
             SELECT last_insert_rowid();
             """,
             new
@@ -103,9 +119,17 @@ public sealed class SqliteVaultStore : IVaultStore
                 Body = entry.NormalizedBody,
                 Source = entry.NormalizedSource,
                 Tags = string.Join(' ', entry.NormalizedTags),
-                CreatedUtc = _time.GetUtcNow().UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+                CreatedUtc = (entry.CreatedUtc ?? _time.GetUtcNow()).UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+                entry.ExternalId,
             },
             cancellationToken: cancellationToken));
+    }
+
+    public async Task<long?> FindByExternalIdAsync(string externalId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<long?>(new CommandDefinition(
+            "SELECT id FROM entries WHERE external_id = @ExternalId;", new { ExternalId = externalId }, cancellationToken: cancellationToken));
     }
 
     public async Task<VaultEntry?> GetAsync(long id, CancellationToken cancellationToken = default)
@@ -175,7 +199,9 @@ public sealed class SqliteVaultStore : IVaultStore
 
         public string CreatedUtc { get; set; } = "";
 
-        public VaultEntry ToEntry() => new(Id, Title, Body, Source, SplitTags(Tags), ParseUtc(CreatedUtc));
+        public string? ExternalId { get; set; }
+
+        public VaultEntry ToEntry() => new(Id, Title, Body, Source, SplitTags(Tags), ParseUtc(CreatedUtc), ExternalId);
     }
 
     private sealed class SearchRow

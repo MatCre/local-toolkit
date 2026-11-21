@@ -1,0 +1,74 @@
+﻿@page "/"
+@inject IVaultStore Vault
+
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Vault" : $"{Q} · Vault")</PageTitle>
+
+@* A plain GET form: submitting it loads /?q=words, so every search has its own URL you can bookmark. *@
+<form method="get" class="search" role="search">
+    <label for="q" class="visually-hidden">Search the vault</label>
+    <input id="q" name="q" type="search" value="@Q" placeholder="Search your answers, snippets and conversations" autofocus />
+    <button type="submit">Search</button>
+</form>
+
+@if (string.IsNullOrWhiteSpace(Q))
+{
+    <p class="meta">@_count.ToString("N0") entries in @Vault.Location</p>
+
+    @if (_recent.Count > 0)
+    {
+        <h2>Recently added</h2>
+        <ul class="results">
+            @foreach (var entry in _recent)
+            {
+                <li>
+                    <a href="entry/@entry.Id">@entry.Title</a>
+                    <span class="meta">@entry.CreatedUtc.ToLocalTime().ToString("d MMM yyyy") @Tags(entry.Tags)</span>
+                </li>
+            }
+        </ul>
+    }
+}
+else if (_results.Count == 0)
+{
+    <p>Nothing matches “@Q”. Every word has to appear somewhere in an entry; try fewer words.</p>
+}
+else
+{
+    <p class="meta">@_results.Count found</p>
+    <ul class="results">
+        @foreach (var hit in _results)
+        {
+            <li>
+                <a href="entry/@hit.Id">@hit.Title</a>
+                <span class="meta">@hit.CreatedUtc.ToLocalTime().ToString("d MMM yyyy") @Tags(hit.Tags)</span>
+                <p class="snippet">@Highlight.Snippet(hit.Snippet)</p>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    // [SupplyParameterFromQuery] fills this from ?q=... in the URL.
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Q { get; set; }
+
+    private IReadOnlyList<VaultSearchResult> _results = [];
+    private IReadOnlyList<VaultEntry> _recent = [];
+    private long _count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Q))
+        {
+            _count = await Vault.CountAsync();
+            _recent = await Vault.ListRecentAsync(15);
+        }
+        else
+        {
+            _results = await Vault.SearchAsync(Q, limit: 25);
+        }
+    }
+
+    private static string Tags(IReadOnlyList<string> tags) =>
+        tags.Count == 0 ? "" : "· " + string.Join(' ', tags.Select(t => "#" + t));
+}

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Bridge between the AI layer and the vault: saves AI answers into the vault.
+    It depends on both cores; neither core depends on it, or on each other.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Toolkit.AI\Toolkit.AI.csproj" />
+    <ProjectReference Include="..\Toolkit.Vault\Toolkit.Vault.csproj" />
+  </ItemGroup>
+
+</Project>

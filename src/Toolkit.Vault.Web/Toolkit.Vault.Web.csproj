@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Search page for the vault. Static server rendering only: the browser gets plain HTML, and a
+    search is an ordinary GET form (?q=...), so there's no WebSocket or WebAssembly involved.
+    Framework, nullable and warnings come from Directory.Build.props like every other project.
+  -->
+  <PropertyGroup>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Toolkit.Vault.Sqlite\Toolkit.Vault.Sqlite.csproj" />
+  </ItemGroup>
+
+</Project>
