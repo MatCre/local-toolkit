@@ -170,7 +170,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
       <span class="what">Sums this month's logged cost and takes cloud providers out of the running past your cap.</span></div>
     <div class="arrow"></div>
     <div class="layer future"><span class="name">RoutingChatClient</span><span class="when">Session 2</span>
-      <span class="what">Tries providers in order from <code>appsettings.json</code> and moves to the next on failure. Logs provider, tokens and cost.</span></div>
+      <span class="what">Tries providers in order from <code>appsettings.json</code> (OpenRouter's free models, then Ollama) and moves to the next on failure or rate limit. Logs provider, tokens and cost.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">OllamaApiClient</span><span class="when">Session 1</span>
       <span class="what">From OllamaSharp. Turns the <code>ChatMessage</code> list into Ollama's JSON and streams the reply back as <code>ChatResponseUpdate</code> chunks.</span></div>
@@ -294,7 +294,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
 <section>
   <div class="eyebrow">09 · Next</div>
   <h2>Session 2: router and fallback</h2>
-  <p>Add a cloud <code>IChatClient</code>, write <code>RoutingChatClient</code> to try providers in the order <code>appsettings.json</code> lists, and log every call to SQLite. The pipeline above gains its first dashed layer. Done when the same call succeeds silently through Ollama with Wi-Fi off.</p>
+  <p>Add OpenRouter as the cloud provider, free models only for now. It uses the OpenAI request format, so the client is <code>Microsoft.Extensions.AI.OpenAI</code> pointed at <code>https://openrouter.ai/api/v1</code>, with the key in user secrets. Then write <code>RoutingChatClient</code> to try providers in the order <code>appsettings.json</code> lists, and log every call to SQLite. The first dashed layer in the pipeline above becomes real. Done when the same call succeeds silently through Ollama with Wi-Fi off.</p>
+  <p>Free-tier limits shape the design: 20 requests a minute and 50 a day until $10 of credits is bought. A rate-limit error (HTTP 429) is one more reason to fall back to Ollama, not a failure. Some free providers may train on prompts, so private data, such as the bank transactions in Session 8, should stay on Ollama.</p>
 </section>
 
 <footer>Last updated after Session 1 · Sat 21 Nov 2026</footer>
