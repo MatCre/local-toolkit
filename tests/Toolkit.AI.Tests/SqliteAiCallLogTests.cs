@@ -33,6 +33,23 @@ public sealed class SqliteAiCallLogTests : IDisposable
         Assert.Equal(["openrouter:0", "ollama:1"], rows);
     }
 
+    [Fact]
+    public async Task Sums_cost_from_a_given_time_onwards()
+    {
+        var log = new SqliteAiCallLog(Path.Combine(_dir, "calls.db"));
+        var monthStart = new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.FromHours(13)); // midnight in NZ
+
+        await log.RecordAsync(Call(monthStart.AddMinutes(-1), 4.00m)); // last month: not counted
+        await log.RecordAsync(Call(monthStart, 0.25m));
+        await log.RecordAsync(Call(monthStart.AddDays(10), 0.50m));
+        await log.RecordAsync(Call(monthStart.AddDays(11), null)); // failed call, no cost
+
+        Assert.Equal(0.75m, await log.GetCostSinceAsync(monthStart));
+    }
+
+    private static AiCallRecord Call(DateTimeOffset at, decimal? cost) =>
+        new(at, "openrouter", "m", 1, 1, TimeSpan.FromSeconds(1), cost, cost is not null, null);
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools(); // pooled connections keep the file locked on Windows

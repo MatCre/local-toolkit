@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
+using Toolkit.AI.Budget;
+using Toolkit.AI.Caching;
 using Toolkit.AI.CallLog;
 using Toolkit.AI.Routing;
 
@@ -79,6 +81,29 @@ public class AddToolkitAITests
         Assert.IsType<LoggingChatClient>(chat);
         Assert.Equal(["openrouter", "ollama"], router!.Providers.Select(p => p.Name));
         Assert.NotNull(chat.GetService<OllamaApiClient>());
+    }
+
+    [Fact]
+    public void Adds_cache_and_budget_layers_when_configured()
+    {
+        using var provider = BuildProvider(With(("ToolkitAI:Budget:MonthlyCapUsd", "1.50")));
+
+        var chat = provider.GetRequiredService<IChatClient>();
+
+        Assert.NotNull(chat.GetService<NormalizingCachingChatClient>()); // NormalizeKeys defaults to on
+        Assert.Equal(1.50m, chat.GetService<BudgetChatClient>()?.MonthlyCapUsd);
+        Assert.True(chat.GetService<ToolkitRoutingChatClient>()!.Providers.Single(p => p.Name == "ollama").IsLocal);
+    }
+
+    [Fact]
+    public void Leaves_out_cache_and_budget_layers_when_off()
+    {
+        using var provider = BuildProvider(With(("ToolkitAI:Cache:Enabled", "false")));
+
+        var chat = provider.GetRequiredService<IChatClient>();
+
+        Assert.Null(chat.GetService<DistributedCachingChatClient>());
+        Assert.Null(chat.GetService<BudgetChatClient>()); // no MonthlyCapUsd set
     }
 
     [Fact]

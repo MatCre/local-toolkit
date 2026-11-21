@@ -46,8 +46,9 @@ public sealed class ToolkitRoutingChatClient : IChatClient
         // A retry sends the same messages again, so read them into a list once.
         var messageList = messages as IList<ChatMessage> ?? messages.ToList();
         var failures = new List<Exception>();
+        (IReadOnlyList<ChatProvider> candidates, options) = SelectProviders(options);
 
-        foreach (var provider in _providers)
+        foreach (var provider in candidates)
         {
             using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             attempt.CancelAfter(provider.Timeout);
@@ -82,8 +83,9 @@ public sealed class ToolkitRoutingChatClient : IChatClient
     {
         var messageList = messages as IList<ChatMessage> ?? messages.ToList();
         var failures = new List<Exception>();
+        (IReadOnlyList<ChatProvider> candidates, options) = SelectProviders(options);
 
-        foreach (var provider in _providers)
+        foreach (var provider in candidates)
         {
             using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             attempt.CancelAfter(provider.Timeout);
@@ -179,6 +181,33 @@ public sealed class ToolkitRoutingChatClient : IChatClient
         {
             provider.Client.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Applies routing hints from outer layers. With <see cref="RoutingHints.LocalOnly"/> set,
+    /// only local providers are tried. Hints are removed from the options passed on, because
+    /// some clients send unknown AdditionalProperties to the server as extra request fields.
+    /// </summary>
+    private (IReadOnlyList<ChatProvider> Providers, ChatOptions? Options) SelectProviders(ChatOptions? options)
+    {
+        if (options?.AdditionalProperties is not { } hints
+            || !hints.TryGetValue(RoutingHints.LocalOnly, out var localOnly)
+            || localOnly is not true)
+        {
+            return (_providers, options);
+        }
+
+        var forwarded = options.Clone();
+        forwarded.AdditionalProperties?.Remove(RoutingHints.LocalOnly);
+
+        var local = _providers.Where(p => p.IsLocal).ToList();
+        if (local.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "This request may only use local providers (is the monthly budget spent?), but none is configured in ToolkitAI:ProviderOrder.");
+        }
+
+        return (local, forwarded);
     }
 
     private static void Track(ChatResponseUpdate update, ref string? modelId, ref UsageDetails? usage)

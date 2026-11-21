@@ -12,16 +12,21 @@ public sealed record AiCallRecord(
     bool Succeeded,
     string? Error);
 
-/// <summary>Where the router records each attempt. Session 3's budget cap reads this back to sum the month's cost.</summary>
+/// <summary>Where the router records each attempt, and where the budget cap reads spending back.</summary>
 public interface IAiCallLog
 {
     Task RecordAsync(AiCallRecord record, CancellationToken cancellationToken = default);
+
+    /// <summary>Total estimated cost (USD) of calls made at or after <paramref name="since"/>.</summary>
+    Task<decimal> GetCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Used when ToolkitAI:CallLog:Enabled is false.</summary>
+/// <summary>Used when ToolkitAI:CallLog:Enabled is false. Records nothing and reports no spending.</summary>
 public sealed class NullAiCallLog : IAiCallLog
 {
     public static readonly NullAiCallLog Instance = new();
 
     public Task RecordAsync(AiCallRecord record, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task<decimal> GetCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken = default) => Task.FromResult(0m);
 }

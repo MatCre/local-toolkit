@@ -36,7 +36,8 @@ internal static class ChatProviderFactory
                 CreateClient(settings),
                 TimeSpan.FromSeconds(settings.TimeoutSeconds),
                 settings.InputPricePerMillionTokens,
-                settings.OutputPricePerMillionTokens));
+                settings.OutputPricePerMillionTokens,
+                IsLocal: settings.Type == ProviderType.Ollama));
         }
 
         if (providers.Count == 0)

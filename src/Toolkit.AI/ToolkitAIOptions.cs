@@ -28,6 +28,10 @@ public sealed class ToolkitAIOptions
 
     public CallLogOptions CallLog { get; set; } = new();
 
+    public BudgetOptions Budget { get; set; } = new();
+
+    public CacheOptions Cache { get; set; } = new();
+
     internal ProviderOptions? FindProvider(string name) =>
         Providers.FirstOrDefault(p => string.Equals(p.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
 }
@@ -74,4 +78,32 @@ public sealed class CallLogOptions
 
     /// <summary>SQLite file for the call log. Relative paths resolve against the current directory.</summary>
     public string DatabasePath { get; set; } = "data/toolkit-ai.db";
+}
+
+public sealed class BudgetOptions
+{
+    /// <summary>
+    /// Estimated USD to spend on cloud providers per calendar month. Once this month's total in
+    /// the call log reaches it, requests go to local providers only. Null means no cap.
+    /// </summary>
+    public decimal? MonthlyCapUsd { get; set; }
+}
+
+public sealed class CacheOptions
+{
+    /// <summary>When on, an identical request (same messages and options) is answered from the cache.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>SQLite file for cached responses. Delete it to clear the cache.</summary>
+    public string DatabasePath { get; set; } = "data/response-cache.db";
+
+    /// <summary>How long a cached answer stays valid.</summary>
+    public int ExpirationHours { get; set; } = 168;
+
+    /// <summary>
+    /// Ignore case, extra whitespace and trailing . ? ! when matching prompts, so
+    /// "What is SQLite?" and "what is sqlite" share an entry. Turn off if prompts carry
+    /// code where case or indentation changes the meaning.
+    /// </summary>
+    public bool NormalizeKeys { get; set; } = true;
 }

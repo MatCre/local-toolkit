@@ -1,6 +1,6 @@
 using System.Globalization;
 using Dapper;
-using Microsoft.Data.Sqlite;
+using Toolkit.AI.Storage;
 
 namespace Toolkit.AI.CallLog;
 
@@ -15,7 +15,7 @@ namespace Toolkit.AI.CallLog;
 /// </remarks>
 public sealed class SqliteAiCallLog : IAiCallLog
 {
-    private const string CreateTableSql = """
+    private const string SchemaSql = """
         CREATE TABLE IF NOT EXISTS ai_calls (
             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp_utc      TEXT    NOT NULL,  -- ISO 8601, sorts correctly as text
@@ -38,29 +38,26 @@ public sealed class SqliteAiCallLog : IAiCallLog
             (@Timestamp, @Provider, @Model, @InputTokens, @OutputTokens, @DurationMs, @Cost, @Succeeded, @Error);
         """;
 
-    private readonly string _connectionString;
-    private readonly SemaphoreSlim _initLock = new(1, 1);
-    private bool _initialized;
+    // The index on timestamp_utc makes this a range scan over this month's rows only.
+    private const string CostSinceSql = """
+        SELECT COALESCE(SUM(estimated_cost_usd), 0) FROM ai_calls WHERE timestamp_utc >= @Since;
+        """;
 
-    public SqliteAiCallLog(string databasePath)
-    {
-        DatabasePath = Path.GetFullPath(databasePath);
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = DatabasePath }.ToString();
-    }
+    private readonly SqliteDatabase _database;
 
-    public string DatabasePath { get; }
+    public SqliteAiCallLog(string databasePath) => _database = new SqliteDatabase(databasePath, SchemaSql);
+
+    public string DatabasePath => _database.FullPath;
 
     public async Task RecordAsync(AiCallRecord record, CancellationToken cancellationToken = default)
     {
-        await EnsureCreatedAsync(cancellationToken);
-
-        await using var connection = new SqliteConnection(_connectionString);
+        await using var connection = await _database.OpenAsync(cancellationToken);
 
         // Property names match the @parameters in InsertSql. Most come straight from the record;
         // the few that need converting for SQLite are given here under the parameter's name.
         await connection.ExecuteAsync(new CommandDefinition(InsertSql, new
         {
-            Timestamp = record.Timestamp.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            Timestamp = ToSortableUtc(record.Timestamp),
             record.Provider,
             record.Model,
             record.InputTokens,
@@ -72,31 +69,15 @@ public sealed class SqliteAiCallLog : IAiCallLog
         }, cancellationToken: cancellationToken));
     }
 
-    private async Task EnsureCreatedAsync(CancellationToken cancellationToken)
+    public async Task<decimal> GetCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken = default)
     {
-        if (_initialized)
-        {
-            return;
-        }
-
-        await _initLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (_initialized)
-            {
-                return;
-            }
-
-            Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
-
-            await using var connection = new SqliteConnection(_connectionString);
-            await connection.ExecuteAsync(new CommandDefinition(CreateTableSql, cancellationToken: cancellationToken));
-
-            _initialized = true;
-        }
-        finally
-        {
-            _initLock.Release();
-        }
+        await using var connection = await _database.OpenAsync(cancellationToken);
+        var total = await connection.ExecuteScalarAsync<double>(
+            new CommandDefinition(CostSinceSql, new { Since = ToSortableUtc(since) }, cancellationToken: cancellationToken));
+        return (decimal)total;
     }
+
+    // Same format for writing and comparing, so text order equals time order.
+    private static string ToSortableUtc(DateTimeOffset value) =>
+        value.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
 }

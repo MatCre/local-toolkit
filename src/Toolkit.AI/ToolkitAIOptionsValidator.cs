@@ -42,6 +42,16 @@ internal sealed class ToolkitAIOptionsValidator : IValidateOptions<ToolkitAIOpti
             }
         }
 
+        if (options.Budget.MonthlyCapUsd < 0)
+        {
+            errors.Add("ToolkitAI:Budget:MonthlyCapUsd cannot be negative.");
+        }
+
+        if (options.Cache.Enabled && options.Cache.ExpirationHours <= 0)
+        {
+            errors.Add("ToolkitAI:Cache:ExpirationHours must be greater than 0.");
+        }
+
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 }

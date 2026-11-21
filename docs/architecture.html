@@ -129,7 +129,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <p class="lede">How the six tools fit together, what happens when a prompt leaves your code, and where each session adds a layer. Updated at the end of every session.</p>
   <div class="status">
     <span class="chip ok">Session 1 done · first local model call</span>
-    <span class="chip ok">Session 2 built · router and fallback</span>
+    <span class="chip ok">Session 2 done · router and fallback</span>
+    <span class="chip ok">Session 3 done · budget cap and cache</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -168,11 +169,11 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="layer future"><span class="name">VaultLoggingChatClient</span><span class="when">Session 5</span>
       <span class="what">Saves each prompt and answer into the vault's SQLite store.</span></div>
     <div class="arrow"></div>
-    <div class="layer future"><span class="name">DistributedCachingChatClient</span><span class="when">Session 3</span>
-      <span class="what">From <code>.UseDistributedCache()</code>. A repeat prompt returns the stored answer and never goes further in.</span></div>
+    <div class="layer built"><span class="name">NormalizingCachingChatClient</span><span class="when">Session 3</span>
+      <span class="what">Microsoft.Extensions.AI's <code>DistributedCachingChatClient</code>, with the key built from normalized text: lower case, single spaces, no trailing . ? !, so "What is SQLite?" and "what is sqlite" share an entry. The model still receives the original text. On a hit it returns the stored answer, and nothing further in runs. Storage is our <code>SqliteDistributedCache</code> in <code>data/response-cache.db</code>, kept for 7 days, so it survives restarts. Turn it off with <code>ToolkitAI:Cache:Enabled=false</code>.</span></div>
     <div class="arrow"></div>
-    <div class="layer future"><span class="name">BudgetChatClient</span><span class="when">Session 3</span>
-      <span class="what">Sums this month's logged cost and takes cloud providers out of the running past your cap.</span></div>
+    <div class="layer built"><span class="name">BudgetChatClient</span><span class="when">Session 3</span>
+      <span class="what">Totals this month's estimated cost from the call log (calendar month, your time zone). At or over <code>MonthlyCapUsd</code>, it adds a <code>toolkit.localOnly</code> hint to the request's options, and the router then tries local providers only. If spending can't be read, it plays safe and goes local. Left out when no cap is set.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">ToolkitRoutingChatClient</span><span class="when">Session 2</span>
       <span class="what">Tries providers in <code>ProviderOrder</code>. Each attempt gets its own timeout. Any failure other than the caller cancelling (an error, a rate limit, a timeout) moves on to the next provider. Every attempt becomes a row in the SQLite call log, and the answer is tagged with the provider that gave it.</span></div>
@@ -194,6 +195,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
       </div>
     </div>
   </div>
+  <p><b>How layers talk to each other:</b> the budget layer can't reach into the router. It can only change what it passes inward. So it puts a hint in <code>ChatOptions.AdditionalProperties</code>, the router reads it, and the router removes it before the request reaches a provider. Some clients send unknown properties to the server as extra request fields, which is why the hint is removed.</p>
   <p>Why this order? Logging sits outermost so it sees every call, including cache hits. The cache sits outside the budget check so a cached answer costs nothing and isn't counted. The router is innermost of the custom layers because it's the one that picks a vendor.</p>
 </section>
 
@@ -254,7 +256,9 @@ footer { color: var(--muted); font-size: 0.82rem; }
 ├─ LocalToolkit.slnx           solution (XML format)
 ├─ docs/architecture.html      this page
 ├─ logs/                       Serilog files (git-ignored)
-├─ data/toolkit-ai.db          call log (git-ignored)
+├─ data/                       git-ignored
+│  ├─ toolkit-ai.db            call log
+│  └─ response-cache.db        cached answers (delete to clear)
 ├─ src/
 │  ├─ Toolkit.AI/              class library
 │  │  ├─ ToolkitAIOptions.cs   + validator
@@ -262,10 +266,17 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  ├─ Routing/
 │  │  │  ├─ ToolkitRoutingChatClient.cs
 │  │  │  ├─ ChatProvider.cs
-│  │  │  └─ ChatProviderFactory.cs
-│  │  └─ CallLog/
-│  │     ├─ IAiCallLog.cs
-│  │     └─ SqliteAiCallLog.cs
+│  │  │  ├─ ChatProviderFactory.cs
+│  │  │  └─ RoutingHints.cs
+│  │  ├─ Budget/BudgetChatClient.cs
+│  │  ├─ Caching/
+│  │  │  ├─ SqliteDistributedCache.cs     the store
+│  │  │  ├─ NormalizingCachingChatClient.cs
+│  │  │  └─ CacheKeyNormalizer.cs
+│  │  ├─ CallLog/
+│  │  │  ├─ IAiCallLog.cs
+│  │  │  └─ SqliteAiCallLog.cs
+│  │  └─ Storage/SqliteDatabase.cs  shared: open file, create tables once
 │  └─ Sandbox/                 console app
 │     ├─ Program.cs
 │     └─ appsettings.json
@@ -274,6 +285,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
       ├─ AddToolkitAITests.cs
       ├─ ToolkitRoutingChatClientTests.cs
       ├─ SqliteAiCallLogTests.cs
+      ├─ BudgetChatClientTests.cs
+      ├─ ResponseCacheTests.cs
       └─ Fakes.cs              scripted fake providers</pre>
     <div class="notes">
       <div><b>Toolkit.AI</b> is a library, not an app. It has no <code>Main</code> and no config files of its own. The app that uses it supplies configuration.</div>
@@ -305,7 +318,20 @@ footer { color: var(--muted); font-size: 0.82rem; }
       <tr><td>ollama</td><td>qwen2.5-coder:7b</td><td class="num">39 / 5</td><td class="num">2,354 ms</td><td class="num">$0</td><td>Answered</td></tr>
     </tbody>
   </table></div>
+  <p>Your own Wi-Fi-off run, against the real <code>openrouter.ai</code>, logged the same pattern: a failed openrouter row ("No such host is known", 88 ms), then ollama answering in 4.2 s. That passed Session 2's done-when check.</p>
   <p>A failed attempt costs very little when the network is down: the DNS lookup fails within milliseconds. The slow case is a cloud provider that accepts the connection and then hangs, which the 30 s OpenRouter timeout covers. Free-tier limits are part of the design: at 20 requests a minute and 50 a day, a 429 is an expected event, not an error. Some free providers may train on prompts, so private data, such as the bank transactions in Session 8, should go straight to Ollama.</p>
+  <h3>Session 3: the cache in action</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Run</th><th>Answered by</th><th>Time</th><th>New call-log rows</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>openrouter → dots-3-note-preview:free</td><td class="num">3.5 s</td><td class="num">1</td></tr>
+      <tr><td class="num">2, same prompt</td><td>response cache</td><td class="num">0.2 s</td><td class="num">0</td></tr>
+      <tr><td class="num">3, new prompt</td><td>openrouter → lfm-3-1.7b:free</td><td class="num">18.9 s</td><td class="num">1</td></tr>
+      <tr><td class="num">4, run 3 reworded*</td><td>response cache</td><td class="num">0.2 s</td><td class="num">0</td></tr>
+    </tbody>
+  </table></div>
+  <p>* Run 3 was "In one sentence: what does a cache key do?". Run 4 was "<code>  in one sentence:   WHAT does a cache key do  </code>": different case, extra spaces, no question mark. Only key normalization makes those match. Without it, matching is exact to the character. Different wording ("Explain cache keys briefly") is still a miss; matching by meaning would need embeddings (Project 5), with a real risk of wrong hits.</p>
+  <p>A cache hit doesn't count against the 50 free requests a day. The summary line on run 2 still says "openrouter" because the provider tag was stored with the answer; the log line "Response cache hit; no provider was called" shows what actually happened. The budget cap can't be shown on free models, where every cost is $0, so a unit test proves it: with $5 spent and a $1 cap, the request goes to the local model and the cloud fake is never called.</p>
 </section>
 
 <section class="callout">
@@ -326,6 +352,10 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <dt>ToolkitRoutingChatClient</dt><dd>Our router. Microsoft.Extensions.AI 11 also ships an abstract <code>RoutingChatClient</code> and a <code>FailoverChatClient</code> template that do similar work. We wrote our own to learn how it works, and could move onto theirs later.</dd>
     <dt>AllProvidersFailedException</dt><dd>What the router throws when every provider fails. <code>InnerExceptions</code> holds one exception per provider, in order.</dd>
     <dt>Dapper</dt><dd>Adds <code>ExecuteAsync</code> and <code>QueryAsync</code> to a database connection. You write the SQL; it fills <code>@Name</code> parameters from an object's properties and turns results into C# objects. The call log uses it now, and the vault will in Session 4. EF Core, the full ORM alternative, would also generate the SQL and manage the tables, which is more than this needs.</dd>
+    <dt>IDistributedCache</dt><dd>.NET's standard interface for a byte store with expiry: <code>Get</code>, <code>Set</code>, <code>Refresh</code> and <code>Remove</code>. The AI caching layer only knows this interface, so the store behind it could be memory, SQLite or Redis. Ours is registered under its own DI key, so it can't clash with a cache the app uses for something else.</dd>
+    <dt>Cache key normalization</dt><dd>Changing the text used to build the key, never the text sent to the model. It costs a little precision: case and indentation in code drop out of the key. Turn it off with <code>ToolkitAI:Cache:NormalizeKeys=false</code>. A version marker in every key keeps normalized and plain keys from matching each other.</dd>
+    <dt>Fail closed</dt><dd>When a safety check can't get its answer, take the safe option. The budget layer goes local-only if it can't read the call log.</dd>
+    <dt>FakeTimeProvider</dt><dd>A clock tests can set and move forward. It's how the tests check month boundaries and cache expiry without waiting. Production code takes a <code>TimeProvider</code> instead of reading <code>DateTime.Now</code> for this reason.</dd>
     <dt>User secrets</dt><dd>A JSON file in your user profile (<code>%APPDATA%\Microsoft\UserSecrets\local-toolkit-sandbox\</code>), outside the repo. It's merged into configuration like any other source.</dd>
     <dt>Serilog</dt><dd>A logging library that sits behind <code>ILogger</code>. Sinks are its destinations (console, file, later Seq or OpenTelemetry). Output templates set the line format.</dd>
     <dt>Generic Host</dt><dd><code>Host.CreateApplicationBuilder</code>: configuration, logging and DI in one object. Workers (S9) and Blazor apps (S5, S13) use the same model.</dd>
@@ -334,9 +364,9 @@ footer { color: var(--muted); font-size: 0.82rem; }
 
 <section>
   <div class="eyebrow">09 · Next</div>
-  <h2>Session 3: budget cap and caching</h2>
-  <p>Write a <code>BudgetChatClient</code> layer that totals this month's <code>estimated_cost_usd</code> from the call log and takes paid providers out of the running once a cap is reached. On free models every cost is $0, so the cap is tested with a priced fake provider. Add <code>.UseDistributedCache()</code> so a repeat prompt is answered from the cache, without using up any of the 50 free requests a day. Done when a unit test proves that calls over the cap go to the local model.</p>
+  <h2>Session 4: answer vault</h2>
+  <p>Project 1 is complete. Project 2 starts a new library, <code>Toolkit.Vault</code>: a SQLite store of useful answers and snippets, with an FTS5 full-text index over title and body. It uses Dapper, which you met in the call log, and a <code>vault add</code> / <code>vault search</code> command-line tool built on <code>System.CommandLine</code>. Done when 10 real snippets are each found with a 2-word search.</p>
 </section>
 
-<footer>Last updated after Session 2 · Sat 21 Nov 2026</footer>
+<footer>Last updated after Session 3 · Sat 21 Nov 2026</footer>
 </main>

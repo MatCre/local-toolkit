@@ -9,6 +9,12 @@ internal sealed class FakeChatClient(string reply = "ok", string model = "fake-m
 {
     public int Calls { get; private set; }
 
+    /// <summary>The options the most recent call arrived with, to check what outer layers passed down.</summary>
+    public ChatOptions? LastOptions { get; private set; }
+
+    /// <summary>The text of the last message of the most recent call, exactly as it arrived.</summary>
+    public string? LastPrompt { get; private set; }
+
     /// <summary>Thrown instead of answering, if set.</summary>
     public Exception? Throw { get; init; }
 
@@ -20,6 +26,8 @@ internal sealed class FakeChatClient(string reply = "ok", string model = "fake-m
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
+        LastOptions = options;
+        LastPrompt = messages.LastOrDefault()?.Text;
         await BehaveAsync(cancellationToken);
         return new ChatResponse(new ChatMessage(ChatRole.Assistant, reply)) { ModelId = model, Usage = Usage };
     }
@@ -28,6 +36,7 @@ internal sealed class FakeChatClient(string reply = "ok", string model = "fake-m
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        LastOptions = options;
         await BehaveAsync(cancellationToken);
         foreach (var word in reply.Split(' '))
         {
@@ -64,9 +73,21 @@ internal sealed class InMemoryCallLog : IAiCallLog
 {
     public List<AiCallRecord> Records { get; } = [];
 
+    /// <summary>Set to make every read fail, as a locked or corrupt database would.</summary>
+    public bool FailReads { get; init; }
+
     public Task RecordAsync(AiCallRecord record, CancellationToken cancellationToken = default)
     {
         Records.Add(record);
         return Task.CompletedTask;
     }
+
+    public Task<decimal> GetCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken = default) =>
+        FailReads
+            ? throw new IOException("database is locked")
+            : Task.FromResult(Records.Where(r => r.Timestamp >= since).Sum(r => r.EstimatedCostUsd ?? 0));
+
+    /// <summary>Adds a past call that cost <paramref name="usd"/>, to put the month's spending where a test needs it.</summary>
+    public void Spent(decimal usd, DateTimeOffset at) =>
+        Records.Add(new AiCallRecord(at, "cloud", "paid-model", 1000, 1000, TimeSpan.FromSeconds(1), usd, true, null));
 }
