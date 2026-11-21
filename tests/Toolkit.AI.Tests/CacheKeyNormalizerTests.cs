@@ -24,7 +24,7 @@ public sealed class CacheKeyNormalizerTests : IDisposable
     [Fact]
     public async Task Reworded_prompts_share_one_cache_entry()
     {
-        var chat = new NormalizingCachingChatClient(_provider, NewStore());
+        var chat = new ToolkitCachingChatClient(_provider, NewStore());
 
         await chat.GetResponseAsync("What is SQLite?");
         await chat.GetResponseAsync("what is sqlite");
@@ -36,7 +36,7 @@ public sealed class CacheKeyNormalizerTests : IDisposable
     [Fact]
     public async Task The_model_receives_the_original_text()
     {
-        var chat = new NormalizingCachingChatClient(_provider, NewStore());
+        var chat = new ToolkitCachingChatClient(_provider, NewStore());
 
         await chat.GetResponseAsync("  What is SQLite?  ");
 
@@ -46,7 +46,7 @@ public sealed class CacheKeyNormalizerTests : IDisposable
     [Fact]
     public async Task Different_words_are_still_different_entries()
     {
-        var chat = new NormalizingCachingChatClient(_provider, NewStore());
+        var chat = new ToolkitCachingChatClient(_provider, NewStore());
 
         await chat.GetResponseAsync("What is SQLite?");
         await chat.GetResponseAsync("What is Dapper?");
@@ -57,7 +57,7 @@ public sealed class CacheKeyNormalizerTests : IDisposable
     [Fact]
     public async Task Without_normalization_case_matters()
     {
-        var chat = new DistributedCachingChatClient(_provider, NewStore());
+        var chat = new ToolkitCachingChatClient(_provider, NewStore(), normalizeKeys: false);
 
         await chat.GetResponseAsync("What is SQLite?");
         await chat.GetResponseAsync("what is sqlite?");

@@ -169,8 +169,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="layer future"><span class="name">VaultLoggingChatClient</span><span class="when">Session 5</span>
       <span class="what">Saves each prompt and answer into the vault's SQLite store.</span></div>
     <div class="arrow"></div>
-    <div class="layer built"><span class="name">NormalizingCachingChatClient</span><span class="when">Session 3</span>
-      <span class="what">Microsoft.Extensions.AI's <code>DistributedCachingChatClient</code>, with the key built from normalized text: lower case, single spaces, no trailing . ? !, so "What is SQLite?" and "what is sqlite" share an entry. The model still receives the original text. On a hit it returns the stored answer, and nothing further in runs. Storage is our <code>SqliteDistributedCache</code> in <code>data/response-cache.db</code>, kept for 7 days, so it survives restarts. Turn it off with <code>ToolkitAI:Cache:Enabled=false</code>.</span></div>
+    <div class="layer built"><span class="name">ToolkitCachingChatClient</span><span class="when">Session 3</span>
+      <span class="what">Microsoft.Extensions.AI's <code>DistributedCachingChatClient</code> with two additions. The key is built from normalized text: lower case, single spaces, no trailing . ? !, so "What is SQLite?" and "what is sqlite" share an entry; the model still receives the original text. And an answer served from the cache is marked <code>toolkit.cacheHit</code>, so callers can tell. On a hit, nothing further in runs. Storage is our <code>SqliteDistributedCache</code> in <code>data/response-cache.db</code>, kept for 7 days, so it survives restarts. Turn it off with <code>ToolkitAI:Cache:Enabled=false</code>.</span></div>
     <div class="arrow"></div>
     <div class="layer built"><span class="name">BudgetChatClient</span><span class="when">Session 3</span>
       <span class="what">Totals this month's estimated cost from the call log (calendar month, your time zone). At or over <code>MonthlyCapUsd</code>, it adds a <code>toolkit.localOnly</code> hint to the request's options, and the router then tries local providers only. If spending can't be read, it plays safe and goes local. Left out when no cap is set.</span></div>
@@ -271,7 +271,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  ├─ Budget/BudgetChatClient.cs
 │  │  ├─ Caching/
 │  │  │  ├─ SqliteDistributedCache.cs     the store
-│  │  │  ├─ NormalizingCachingChatClient.cs
+│  │  │  ├─ ToolkitCachingChatClient.cs   key normalization, hit marking
 │  │  │  └─ CacheKeyNormalizer.cs
 │  │  ├─ CallLog/
 │  │  │  ├─ IAiCallLog.cs
@@ -331,7 +331,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     </tbody>
   </table></div>
   <p>* Run 3 was "In one sentence: what does a cache key do?". Run 4 was "<code>  in one sentence:   WHAT does a cache key do  </code>": different case, extra spaces, no question mark. Only key normalization makes those match. Without it, matching is exact to the character. Different wording ("Explain cache keys briefly") is still a miss; matching by meaning would need embeddings (Project 5), with a real risk of wrong hits.</p>
-  <p>A cache hit doesn't count against the 50 free requests a day. The summary line on run 2 still says "openrouter" because the provider tag was stored with the answer; the log line "Response cache hit; no provider was called" shows what actually happened. The budget cap can't be shown on free models, where every cost is $0, so a unit test proves it: with $5 spent and a $1 cap, the request goes to the local model and the cloud fake is never called.</p>
+  <p>A cache hit doesn't count against the 50 free requests a day. A cached answer carries the provider name and token counts of the call that first produced it, so at first a hit looked exactly like a fresh openrouter call. Now the caching layer marks hits, and the Sandbox prints <code>[0.2s, from cache, no provider called; first answered by openrouter -> …]</code>. The budget cap can't be shown on free models, where every cost is $0, so a unit test proves it: with $5 spent and a $1 cap, the request goes to the local model and the cloud fake is never called.</p>
 </section>
 
 <section class="callout">

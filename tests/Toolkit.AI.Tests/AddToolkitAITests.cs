@@ -90,7 +90,7 @@ public class AddToolkitAITests
 
         var chat = provider.GetRequiredService<IChatClient>();
 
-        Assert.NotNull(chat.GetService<NormalizingCachingChatClient>()); // NormalizeKeys defaults to on
+        Assert.True(chat.GetService<ToolkitCachingChatClient>()?.NormalizeKeys == true); // NormalizeKeys defaults to on
         Assert.Equal(1.50m, chat.GetService<BudgetChatClient>()?.MonthlyCapUsd);
         Assert.True(chat.GetService<ToolkitRoutingChatClient>()!.Providers.Single(p => p.Name == "ollama").IsLocal);
     }

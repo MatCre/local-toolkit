@@ -17,7 +17,7 @@ public sealed class ResponseCacheTests : IDisposable
     private SqliteDistributedCache NewStore() =>
         new(Path.Combine(_dir, "cache.db"), TimeSpan.FromHours(1), _time, NullLogger<SqliteDistributedCache>.Instance);
 
-    private IChatClient CachedPipeline(SqliteDistributedCache store) => new DistributedCachingChatClient(_provider, store);
+    private IChatClient CachedPipeline(SqliteDistributedCache store) => new ToolkitCachingChatClient(_provider, store, normalizeKeys: false);
 
     [Fact]
     public async Task A_repeated_prompt_is_answered_from_the_cache()
@@ -27,7 +27,29 @@ public sealed class ResponseCacheTests : IDisposable
         var first = await chat.GetResponseAsync("What is SQLite?");
         var second = await chat.GetResponseAsync("What is SQLite?");
 
+        Assert.False(ToolkitCachingChatClient.IsCacheHit(first));
+        Assert.True(ToolkitCachingChatClient.IsCacheHit(second));
+
         Assert.Equal(first.Text, second.Text);
+        Assert.Equal(1, _provider.Calls);
+    }
+
+    [Fact]
+    public async Task A_streamed_answer_from_the_cache_is_marked_as_a_hit()
+    {
+        var chat = CachedPipeline(NewStore());
+
+        await foreach (var _ in chat.GetStreamingResponseAsync("What is SQLite?"))
+        {
+        }
+
+        var replayed = new List<ChatResponseUpdate>();
+        await foreach (var update in chat.GetStreamingResponseAsync("What is SQLite?"))
+        {
+            replayed.Add(update);
+        }
+
+        Assert.True(ToolkitCachingChatClient.IsCacheHit(replayed.ToChatResponse()));
         Assert.Equal(1, _provider.Calls);
     }
 

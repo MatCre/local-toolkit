@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Toolkit.AI;
+using Toolkit.AI.Caching;
 using Toolkit.AI.Routing;
 
 // The generic host gives us configuration, logging and DI, the same plumbing an
@@ -57,7 +58,13 @@ var response = await chat.GetResponseAsync(prompt);
 
 stopwatch.Stop();
 var provider = response.AdditionalProperties?[ToolkitRoutingChatClient.ProviderPropertyKey] ?? "unknown";
+var answeredBy = $"{provider} -> {response.ModelId}";
+var tokens = $"{response.Usage?.InputTokenCount ?? 0} in / {response.Usage?.OutputTokenCount ?? 0} out tokens";
 
 Console.WriteLine(response.Text);
-Console.WriteLine($"\n[{stopwatch.Elapsed.TotalSeconds:F1}s, {provider} -> {response.ModelId}, " +
-                  $"{response.Usage?.InputTokenCount ?? 0} in / {response.Usage?.OutputTokenCount ?? 0} out tokens]");
+
+// A cached answer carries the provider name and token counts of the call that first produced it.
+// Say so, rather than make a cache hit look like a fresh call.
+Console.WriteLine(ToolkitCachingChatClient.IsCacheHit(response)
+    ? $"\n[{stopwatch.Elapsed.TotalSeconds:F1}s, from cache, no provider called; first answered by {answeredBy}]"
+    : $"\n[{stopwatch.Elapsed.TotalSeconds:F1}s, {answeredBy}, {tokens}]");

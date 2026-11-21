@@ -89,9 +89,7 @@ public static class ServiceCollectionExtensions
         }
 
         var storage = sp.GetRequiredKeyedService<IDistributedCache>(ResponseCacheKey);
-        return cache.NormalizeKeys
-            ? new NormalizingCachingChatClient(inner, storage)
-            : new DistributedCachingChatClient(inner, storage);
+        return new ToolkitCachingChatClient(inner, storage, cache.NormalizeKeys);
     }
 
     private static ToolkitAIOptions Options(IServiceProvider sp) =>
