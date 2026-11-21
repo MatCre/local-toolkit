@@ -86,6 +86,10 @@ pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 
 .arrow::after { content: ""; position: absolute; left: -4px; bottom: -1px; border: 5px solid transparent; border-top-color: var(--line); border-bottom: 0; }
 .boundary { text-align: center; font: 500 0.72rem var(--font-mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 0; border-top: 1px dashed var(--line); margin-top: 8px; }
 
+.fork { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.fork > div { display: flex; flex-direction: column; min-width: 0; }
+.fork-label { text-align: center; font: 500 0.72rem var(--font-mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 0; }
+
 /* steps */
 ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 10px; }
 ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 12px; }
@@ -125,6 +129,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <p class="lede">How the six tools fit together, what happens when a prompt leaves your code, and where each session adds a layer. Updated at the end of every session.</p>
   <div class="status">
     <span class="chip ok">Session 1 done · first local model call</span>
+    <span class="chip ok">Session 2 built · router and fallback</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -169,14 +174,25 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="layer future"><span class="name">BudgetChatClient</span><span class="when">Session 3</span>
       <span class="what">Sums this month's logged cost and takes cloud providers out of the running past your cap.</span></div>
     <div class="arrow"></div>
-    <div class="layer future"><span class="name">RoutingChatClient</span><span class="when">Session 2</span>
-      <span class="what">Tries providers in order from <code>appsettings.json</code> (OpenRouter's free models, then Ollama) and moves to the next on failure or rate limit. Logs provider, tokens and cost.</span></div>
-    <div class="arrow"></div>
-    <div class="layer built"><span class="name">OllamaApiClient</span><span class="when">Session 1</span>
-      <span class="what">From OllamaSharp. Turns the <code>ChatMessage</code> list into Ollama's JSON and streams the reply back as <code>ChatResponseUpdate</code> chunks.</span></div>
-    <div class="boundary">process boundary · HTTP POST localhost:11434/api/chat</div>
-    <div class="layer local"><span class="name">Ollama server → qwen2.5-coder:7b</span><span class="when">local</span>
-      <span class="what">Loads the model into GPU memory on first use and keeps it there about 5 minutes after the last call. Tokens stream back as newline-delimited JSON.</span></div>
+    <div class="layer built"><span class="name">ToolkitRoutingChatClient</span><span class="when">Session 2</span>
+      <span class="what">Tries providers in <code>ProviderOrder</code>. Each attempt gets its own timeout. Any failure other than the caller cancelling (an error, a rate limit, a timeout) moves on to the next provider. Every attempt becomes a row in the SQLite call log, and the answer is tagged with the provider that gave it.</span></div>
+    <div class="fork-label">first try ↓ · on failure → next</div>
+    <div class="fork">
+      <div>
+        <div class="layer built"><span class="name">OpenAIClient (openrouter)</span><span class="when">1st</span>
+          <span class="what">The official OpenAI SDK pointed at <code>https://openrouter.ai/api/v1</code>, model <code>openrouter/free</code>. SDK retries are off, so a 429 falls back right away. Skipped until an API key is set.</span></div>
+        <div class="boundary">internet · HTTPS POST /chat/completions</div>
+        <div class="layer future"><span class="name">OpenRouter → a free model</span><span class="when">cloud</span>
+          <span class="what">The free router picks a model. 20 requests a minute and 50 a day. Some free providers may train on prompts.</span></div>
+      </div>
+      <div>
+        <div class="layer built"><span class="name">OllamaApiClient (ollama)</span><span class="when">2nd</span>
+          <span class="what">OllamaSharp with its HttpClient timeout off, so the router's 120 s limit covers a cold model load.</span></div>
+        <div class="boundary">process boundary · HTTP POST localhost:11434/api/chat</div>
+        <div class="layer local"><span class="name">Ollama server → qwen2.5-coder:7b</span><span class="when">local</span>
+          <span class="what">Loads the model into GPU memory on first use and keeps it there about 5 minutes after the last call.</span></div>
+      </div>
+    </div>
   </div>
   <p>Why this order? Logging sits outermost so it sees every call, including cache hits. The cache sits outside the budget check so a cached answer costs nothing and isn't counted. The router is innermost of the custom layers because it's the one that picks a vendor.</p>
 </section>
@@ -191,7 +207,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <li><div><b>Configuration loads in layers.</b> The table below shows the order. Later sources override earlier ones key by key.</div></li>
     <li><div><b>Registration.</b> <code>AddToolkitAI(config)</code> binds the <code>ToolkitAI</code> section to <code>ToolkitAIOptions</code>, registers validation, and registers a factory for the <code>IChatClient</code> pipeline. Nothing is constructed yet.</div></li>
     <li><div><b>Build the container.</b> <code>builder.Build()</code> freezes the registrations.</div></li>
-    <li><div><b>Resolve.</b> <code>GetRequiredService&lt;IChatClient&gt;()</code> runs the factory: it reads the options, which triggers validation, creates <code>OllamaApiClient</code>, then wraps it in <code>LoggingChatClient</code>.</div></li>
+    <li><div><b>Resolve.</b> <code>GetRequiredService&lt;IChatClient&gt;()</code> runs the factory: it reads the options, which triggers validation. <code>ChatProviderFactory</code> builds one client per provider and skips any cloud provider with no API key, logging a warning. It wraps them in <code>ToolkitRoutingChatClient</code>, then in <code>LoggingChatClient</code>.</div></li>
     <li><div><b>Call.</b> <code>await chat.GetResponseAsync(prompt)</code> waits for the whole reply. The <code>ChatResponse</code> it returns holds the text, the model ID and <code>Usage</code> token counts. The streaming version, <code>GetStreamingResponseAsync</code>, shows tokens sooner, but Trace logging then writes one entry per chunk, so Sandbox doesn't use it.</div></li>
   </ol>
 </section>
@@ -202,15 +218,14 @@ footer { color: var(--muted); font-size: 0.82rem; }
   <div class="scroll"><table>
     <thead><tr><th>Order</th><th>Source</th><th>In Git?</th><th>Use it for</th></tr></thead>
     <tbody>
-      <tr><td class="num">1</td><td><code>appsettings.json</code></td><td>Yes</td><td>Safe defaults: endpoint, model, log levels</td></tr>
+      <tr><td class="num">1</td><td><code>appsettings.json</code></td><td>Yes</td><td>Provider order, endpoints, models, timeouts, log levels</td></tr>
       <tr><td class="num">2</td><td><code>appsettings.{Environment}.json</code></td><td>Yes</td><td>Per environment (Development, Production)</td></tr>
-      <tr><td class="num">3</td><td><code>dotnet user-secrets</code></td><td>No</td><td>API keys (Session 2). Development only.</td></tr>
-      <tr><td class="num">4</td><td>Environment variables</td><td>No</td><td><code>ToolkitAI__Ollama__Model=llama3.2:3b</code></td></tr>
-      <tr><td class="num">5</td><td>Command-line args</td><td>No</td><td>One-off overrides</td></tr>
-      <tr><td class="num">6</td><td><code>appsettings.Local.json</code></td><td>No (ignored)</td><td>Paths and settings specific to this machine</td></tr>
+      <tr><td class="num">3</td><td><code>appsettings.Local.json</code></td><td>No (ignored)</td><td>Paths and settings specific to this machine</td></tr>
+      <tr><td class="num">4</td><td><code>dotnet user-secrets</code></td><td>No</td><td>The OpenRouter key: <code>ToolkitAI:Providers:openrouter:ApiKey</code>. The host normally loads these only in Development; Sandbox loads them explicitly, so they're always read.</td></tr>
+      <tr><td class="num">5</td><td>Environment variables</td><td>No</td><td><code>ToolkitAI__Providers__ollama__Model=llama3.2:3b</code></td></tr>
     </tbody>
   </table></div>
-  <p>The <code>ToolkitAI:Ollama:Model</code> key in JSON, <code>ToolkitAI__Ollama__Model</code> as an environment variable, and the <code>Model</code> property on <code>OllamaOptions</code> are the same setting. The binder maps one to the other by name.</p>
+  <p>Providers are a dictionary keyed by name, not a JSON array. That gives each setting a stable address that a secret or environment variable can override, such as <code>ToolkitAI:Providers:openrouter:ApiKey</code>. In an array it would be <code>Providers:0:ApiKey</code>, which breaks as soon as the order changes. The <code>ToolkitAI:Providers:ollama:Model</code> key in JSON, <code>ToolkitAI__Providers__ollama__Model</code> as an environment variable, and the <code>Model</code> property on <code>ProviderOptions</code> are the same setting. The binder maps one to the other by name.</p>
 </section>
 
 <section>
@@ -239,20 +254,32 @@ footer { color: var(--muted); font-size: 0.82rem; }
 ├─ LocalToolkit.slnx           solution (XML format)
 ├─ docs/architecture.html      this page
 ├─ logs/                       Serilog files (git-ignored)
+├─ data/toolkit-ai.db          call log (git-ignored)
 ├─ src/
 │  ├─ Toolkit.AI/              class library
-│  │  ├─ ToolkitAIOptions.cs
-│  │  └─ ServiceCollectionExtensions.cs
+│  │  ├─ ToolkitAIOptions.cs   + validator
+│  │  ├─ ServiceCollectionExtensions.cs
+│  │  ├─ Routing/
+│  │  │  ├─ ToolkitRoutingChatClient.cs
+│  │  │  ├─ ChatProvider.cs
+│  │  │  └─ ChatProviderFactory.cs
+│  │  └─ CallLog/
+│  │     ├─ IAiCallLog.cs
+│  │     └─ SqliteAiCallLog.cs
 │  └─ Sandbox/                 console app
 │     ├─ Program.cs
 │     └─ appsettings.json
 └─ tests/
    └─ Toolkit.AI.Tests/        xUnit
-      └─ AddToolkitAITests.cs</pre>
+      ├─ AddToolkitAITests.cs
+      ├─ ToolkitRoutingChatClientTests.cs
+      ├─ SqliteAiCallLogTests.cs
+      └─ Fakes.cs              scripted fake providers</pre>
     <div class="notes">
       <div><b>Toolkit.AI</b> is a library, not an app. It has no <code>Main</code> and no config files of its own. The app that uses it supplies configuration.</div>
       <div><b>Sandbox</b> is a scratch app for trying the layer by hand. Later tools are separate apps that reference Toolkit.AI the same way.</div>
-      <div><b>Tests</b> check the wiring without calling Ollama, so they pass offline and in CI. They prove options bind, the pipeline order is right, and bad config fails fast.</div>
+      <div><b>Tests</b> never call a real model, so they pass offline and in CI. The router tests use <code>FakeChatClient</code>, which can be told to fail, stall or answer, to prove fallback, timeouts, cancellation and cost estimates. The wiring tests prove options bind, a cloud provider with no key is skipped, and bad config fails at startup.</div>
+      <div><b>Routing/</b> is the only folder that names vendor SDK types (OpenAI, OllamaSharp). Everything outside it sees <code>IChatClient</code>.</div>
       <div><b>Project references</b> point one way: Sandbox → Toolkit.AI ← Tests. Toolkit.AI never references an app.</div>
       <div><b>.slnx</b> is the XML solution format, the default since the .NET 10 SDK. It's readable and merges cleanly in Git.</div>
     </div>
@@ -268,7 +295,17 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="stat"><div class="v">100% GPU</div><div class="l"><code>ollama ps</code>: 4.8 GB, 4096 context</div></div>
     <div class="stat"><div class="v">3 / 3</div><div class="l">Wiring tests passing</div></div>
   </div>
-  <p>At Trace, Ollama reports its own timing. One warm call took 0.41s inside Ollama, but 2.7s end to end; the rest is the app starting up: the host, JIT compilation and the first HTTP connection. Cold starts are what a local fallback costs. Session 2's router should allow a long timeout for the first Ollama call, or warm the model at startup.</p>
+  <p>At Trace, Ollama reports its own timing. One warm call took 0.41s inside Ollama, but 2.7s end to end; the rest is the app starting up: the host, JIT compilation and the first HTTP connection. Cold starts are what a local fallback costs, so the router gives Ollama a 120 s timeout.</p>
+  <h3>Session 2: a fallback, in the call log</h3>
+  <p>The Sandbox ran with OpenRouter's address set to a host that doesn't exist, which is how it looks with Wi-Fi off. The caller got an answer and saw one warning line. <code>data/toolkit-ai.db</code> recorded both attempts:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Provider</th><th>Model</th><th>Tokens in / out</th><th>Duration</th><th>Cost</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>openrouter</td><td>openrouter/free</td><td class="num">–</td><td class="num">83 ms</td><td class="num">–</td><td>Failed: No such host is known</td></tr>
+      <tr><td>ollama</td><td>qwen2.5-coder:7b</td><td class="num">39 / 5</td><td class="num">2,354 ms</td><td class="num">$0</td><td>Answered</td></tr>
+    </tbody>
+  </table></div>
+  <p>A failed attempt costs very little when the network is down: the DNS lookup fails within milliseconds. The slow case is a cloud provider that accepts the connection and then hangs, which the 30 s OpenRouter timeout covers. Free-tier limits are part of the design: at 20 requests a minute and 50 a day, a 429 is an expected event, not an error. Some free providers may train on prompts, so private data, such as the bank transactions in Session 8, should go straight to Ollama.</p>
 </section>
 
 <section class="callout">
@@ -286,6 +323,10 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <dt>GetService&lt;T&gt;()</dt><dd>Walks down the pipeline to find a layer of type T. The tests use it to confirm Ollama is innermost.</dd>
     <dt>Options pattern</dt><dd>Binds a config section to a class (<code>IOptions&lt;ToolkitAIOptions&gt;</code>). <code>ValidateOnStart</code> makes bad config fail when the app starts instead of on first use.</dd>
     <dt>Central Package Management</dt><dd><code>Directory.Packages.props</code> holds every package version. A <code>.csproj</code> lists package names only.</dd>
+    <dt>ToolkitRoutingChatClient</dt><dd>Our router. Microsoft.Extensions.AI 11 also ships an abstract <code>RoutingChatClient</code> and a <code>FailoverChatClient</code> template that do similar work. We wrote our own to learn how it works, and could move onto theirs later.</dd>
+    <dt>AllProvidersFailedException</dt><dd>What the router throws when every provider fails. <code>InnerExceptions</code> holds one exception per provider, in order.</dd>
+    <dt>Dapper</dt><dd>Adds <code>ExecuteAsync</code> and <code>QueryAsync</code> to a database connection. You write the SQL; it fills <code>@Name</code> parameters from an object's properties and turns results into C# objects. The call log uses it now, and the vault will in Session 4. EF Core, the full ORM alternative, would also generate the SQL and manage the tables, which is more than this needs.</dd>
+    <dt>User secrets</dt><dd>A JSON file in your user profile (<code>%APPDATA%\Microsoft\UserSecrets\local-toolkit-sandbox\</code>), outside the repo. It's merged into configuration like any other source.</dd>
     <dt>Serilog</dt><dd>A logging library that sits behind <code>ILogger</code>. Sinks are its destinations (console, file, later Seq or OpenTelemetry). Output templates set the line format.</dd>
     <dt>Generic Host</dt><dd><code>Host.CreateApplicationBuilder</code>: configuration, logging and DI in one object. Workers (S9) and Blazor apps (S5, S13) use the same model.</dd>
   </dl>
@@ -293,10 +334,9 @@ footer { color: var(--muted); font-size: 0.82rem; }
 
 <section>
   <div class="eyebrow">09 · Next</div>
-  <h2>Session 2: router and fallback</h2>
-  <p>Add OpenRouter as the cloud provider, free models only for now. It uses the OpenAI request format, so the client is <code>Microsoft.Extensions.AI.OpenAI</code> pointed at <code>https://openrouter.ai/api/v1</code>, with the key in user secrets. Then write <code>RoutingChatClient</code> to try providers in the order <code>appsettings.json</code> lists, and log every call to SQLite. The first dashed layer in the pipeline above becomes real. Done when the same call succeeds silently through Ollama with Wi-Fi off.</p>
-  <p>Free-tier limits shape the design: 20 requests a minute and 50 a day until $10 of credits is bought. A rate-limit error (HTTP 429) is one more reason to fall back to Ollama, not a failure. Some free providers may train on prompts, so private data, such as the bank transactions in Session 8, should stay on Ollama.</p>
+  <h2>Session 3: budget cap and caching</h2>
+  <p>Write a <code>BudgetChatClient</code> layer that totals this month's <code>estimated_cost_usd</code> from the call log and takes paid providers out of the running once a cap is reached. On free models every cost is $0, so the cap is tested with a priced fake provider. Add <code>.UseDistributedCache()</code> so a repeat prompt is answered from the cache, without using up any of the 50 free requests a day. Done when a unit test proves that calls over the cap go to the local model.</p>
 </section>
 
-<footer>Last updated after Session 1 · Sat 21 Nov 2026</footer>
+<footer>Last updated after Session 2 · Sat 21 Nov 2026</footer>
 </main>

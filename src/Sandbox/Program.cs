@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Toolkit.AI;
+using Toolkit.AI.Routing;
 
 // The generic host gives us configuration, logging and DI, the same plumbing an
 // ASP.NET Core or Worker Service app uses, so later projects wire up identically.
@@ -19,6 +20,13 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 // user secrets (Development only) -> environment variables -> command line.
 // appsettings.Local.json is git-ignored and holds machine-specific overrides.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+
+// The host only loads user secrets in the Development environment, and a console app runs
+// as Production unless DOTNET_ENVIRONMENT says otherwise. Load them explicitly so the
+// OpenRouter key set with `dotnet user-secrets` is always found. Environment variables
+// added after this still win.
+builder.Configuration.AddUserSecrets<Program>(optional: true);
+builder.Configuration.AddEnvironmentVariables();
 
 // Serilog replaces the default console logger. Code still logs through ILogger<T>;
 // Serilog decides how it looks and where it goes (console + rolling file), driven
@@ -48,6 +56,8 @@ var stopwatch = Stopwatch.StartNew();
 var response = await chat.GetResponseAsync(prompt);
 
 stopwatch.Stop();
+var provider = response.AdditionalProperties?[ToolkitRoutingChatClient.ProviderPropertyKey] ?? "unknown";
+
 Console.WriteLine(response.Text);
-Console.WriteLine($"\n[{stopwatch.Elapsed.TotalSeconds:F1}s, {response.ModelId}, " +
+Console.WriteLine($"\n[{stopwatch.Elapsed.TotalSeconds:F1}s, {provider} -> {response.ModelId}, " +
                   $"{response.Usage?.InputTokenCount ?? 0} in / {response.Usage?.OutputTokenCount ?? 0} out tokens]");
