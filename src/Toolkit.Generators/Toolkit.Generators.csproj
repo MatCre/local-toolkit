@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A Roslyn source generator. It runs inside the C# compiler while other projects build, so:
+    - it targets netstandard2.0, the only framework the compiler can load generators from;
+    - it references Microsoft.CodeAnalysis no newer than the oldest compiler that will load it
+      (SDK 11.0.100 ships Roslyn 5.12; IDEs carry their own copy, often older);
+    - EnforceExtendedAnalyzerRules turns on analyzers that catch generator mistakes, like using
+      APIs the compiler host doesn't allow.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      A changelog of the diagnostic ids this project reports (TKG001...). Roslyn's analyzers require
+      it, so an id can't be reused or change meaning without it showing up in review.
+    -->
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

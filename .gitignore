@@ -493,3 +493,6 @@ data/
 
 # Packed .NET tools (dotnet pack -o artifacts)
 artifacts/
+
+# Verify snapshot test output awaiting review (approved ones are *.verified.*)
+*.received.*

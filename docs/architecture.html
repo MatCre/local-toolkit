@@ -134,6 +134,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <span class="chip ok">Session 4 done · answer vault CLI</span>
     <span class="chip ok">Session 5 done · capture, import, search page</span>
     <span class="chip ok">Session 6 done · dotnet new template pack</span>
+    <span class="chip ok">Session 7 built · strongly-typed id source generator</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -150,7 +151,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
       <span class="uses">Provider routing, budget cap, caching, fallback to local. Exposes <code>services.AddToolkitAI(config)</code>.</span>
     </div>
     <div class="proj"><h3>Toolkit.Vault</h3><span class="mono">Project 2 · S4–5</span><span class="uses">Adds a middleware layer that saves every answer.</span></div>
-    <div class="proj"><h3>Toolkit.Templates / Generators</h3><span class="mono">Project 3 · S6–7</span><span class="uses">No AI at runtime. <code>tk-endpoint</code>, <code>tk-store</code> and <code>tk-cli</code> templates are done; a source generator comes next.</span></div>
+    <div class="proj"><h3>Toolkit.Templates / Generators</h3><span class="mono">Project 3 · S6–7</span><span class="uses">No AI at runtime. <code>tk-endpoint</code>, <code>tk-store</code> and <code>tk-cli</code> templates, plus a <code>[StronglyTypedId]</code> source generator.</span></div>
     <div class="proj"><h3>Toolkit.Rules</h3><span class="mono">Project 4 · S8–9</span><span class="uses">AI proposes rules once; plain C# runs them.</span></div>
     <div class="proj"><h3>Toolkit.Search</h3><span class="mono">Project 5 · S10–11</span><span class="uses">Uses <code>IEmbeddingGenerator</code>, the embedding sibling of <code>IChatClient</code>.</span></div>
     <div class="proj"><h3>Toolkit.Cards</h3><span class="mono">Project 6 · S12–13</span><span class="uses">Drafts flashcards from vault entries via the AI layer.</span></div>
@@ -296,6 +297,11 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  └─ …Extensions.cs        AddVaultCapture()
 │  ├─ Toolkit.Vault.Web/       Blazor search page (static rendering)
 │  │  └─ Components/Pages/     Home (search), Entry
+│  ├─ Toolkit.Generators/      Roslyn source generator (netstandard2.0)
+│  │  ├─ StronglyTypedIdGenerator.cs  the incremental pipeline
+│  │  ├─ IdSourceRenderer.cs   writes each id's C#
+│  │  ├─ AttributeSource.cs    [StronglyTypedId], added to consumers
+│  │  └─ Diagnostics.cs        TKG001–TKG004 compile errors
 │  ├─ Toolkit.Templates/       dotnet new template pack (Project 3)
 │  │  ├─ content/tk-endpoint/  minimal API + validation + tests
 │  │  ├─ content/tk-store/     core + SQLite adapter + contract tests
@@ -320,7 +326,11 @@ footer { color: var(--muted); font-size: 0.82rem; }
       ├─ VaultStoreContractTests.cs  what any IVaultStore must do
       ├─ SqliteVaultStoreTests.cs    runs the contract on SQLite
       ├─ SearchTextTests.cs
-      └─ FtsQueryTests.cs</pre>
+      └─ FtsQueryTests.cs
+   └─ Toolkit.Generators.Tests/
+      ├─ Snapshots/*.verified.cs   approved generator output
+      ├─ Sample/SampleIds.cs       a real consumer of the generator
+      └─ …Tests.cs                 snapshots, compile checks, behaviour</pre>
     <div class="notes">
       <div><b>Toolkit.AI</b> is a library, not an app. It has no <code>Main</code> and no config files of its own. The app that uses it supplies configuration.</div>
       <div><b>Sandbox</b> is a scratch app for trying the layer by hand. Later tools are separate apps that reference Toolkit.AI the same way.</div>
@@ -490,6 +500,29 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
 <pre>dotnet pack src/Toolkit.Templates -o artifacts
 dotnet new install artifacts/LocalToolkit.Templates.0.1.0.nupkg
 dotnet new tk-endpoint -n Orders --item Order</pre>
+
+  <h3>Session 7: a source generator, which writes code at every build</h3>
+  <p>A template creates files once, and then they're yours. A <b>source generator</b> runs inside the C# compiler on every build, and in the IDE as you type. It reads your code and adds more. <code>Toolkit.Generators</code> turns one line into a complete id type:</p>
+<pre>[StronglyTypedId]                 public partial record struct OrderId;        // wraps a Guid
+[StronglyTypedId(IdType.Int)]     public partial record struct CustomerNumber; // wraps an int
+[StronglyTypedId(IdType.String)]  public partial record struct Sku;            // wraps a string</pre>
+  <p>Each gets a read-only <code>Value</code>, value equality, <code>CompareTo</code>, <code>Parse</code>/<code>TryParse</code> (so minimal APIs can bind it from a route), JSON as the plain value, and <code>New()</code>/<code>Empty</code> for Guid ids. Passing a <code>CustomerNumber</code> where an <code>OrderId</code> is expected becomes a compile error.</p>
+  <div class="pipe">
+    <div class="layer caller"><span class="name">Once per project</span><span class="when">post-init</span>
+      <span class="what">Adds the <code>[StronglyTypedId]</code> attribute and <code>IdType</code> enum to the consuming project, so there's nothing else to install. They're <code>internal</code> and <code>[Embedded]</code>, so two projects' copies never clash.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">ForAttributeWithMetadataName</span><span class="when">find</span>
+      <span class="what">Roslyn indexes attributes, so finding <code>[StronglyTypedId]</code> declarations is far cheaper than scanning every syntax node.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">Inspect → IdTarget</span><span class="when">transform</span>
+      <span class="what">Checks the declaration and reduces it to plain data: namespace, name, backing type. Plain records compare by value, so an id you didn't edit is a cache hit and isn't regenerated. That's what keeps the IDE fast.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">AddSource / ReportDiagnostic</span><span class="when">output</span>
+      <span class="what">Writes <code>OrderId.g.cs</code>, or reports TKG001–TKG004 (not a record struct, not partial, nested, has a parameter list) as a red squiggle on the type name.</span></div>
+  </div>
+  <p><b>Constraints of running inside the compiler:</b> the generator targets <code>netstandard2.0</code> and references Roslyn 5.0, no newer than the compiler that loads it (the SDK has 5.12; IDEs carry their own copy). <code>netstandard2.0</code> also lacks some C# plumbing, so a tiny <code>IsExternalInit</code> polyfill enables records, and list patterns (which need <code>System.Index</code>) became a plain length check. Roslyn's own analyzers insisted on two more things: a changelog of diagnostic ids (<code>AnalyzerReleases.*.md</code>), and single-sentence error messages.</p>
+  <p><b>Snapshot testing with Verify:</b> tests run the generator on a snippet and save its exact output as <code>Snapshots/*.verified.cs</code>. On the first run Verify writes <code>.received</code> files, which I reviewed and approved by renaming them. From then on, any change to the generated code fails the test and shows the difference to review. Other tests check that the output compiles for every backing type and that each misuse gives its error. <code>Sample/SampleIds.cs</code> uses the generator for real, and behaviour tests exercise JSON, parsing and sorting. 17 tests in all.</p>
+  <p><b>Seeing the generated code:</b> in Visual Studio or Rider, open the test project's Dependencies → Analyzers → Toolkit.Generators → StronglyTypedIdGenerator, or press F12 on <code>OrderId.New()</code>. On disk, <code>EmitCompilerGeneratedFiles</code> writes copies to <code>tests/Toolkit.Generators.Tests/obj/Debug/net11.0/generated/</code>.</p>
 </section>
 
 <section class="callout">
@@ -515,6 +548,8 @@ dotnet new tk-endpoint -n Orders --item Order</pre>
     <dt>IToolkitChatLayer</dt><dd>The AI layer's extension point. Another package registers one in DI, and <code>AddToolkitAI</code> places it between the cache and the budget check. Vault capture uses it, so the AI core never references the vault.</dd>
     <dt>Schema migration</dt><dd>A numbered change to a database's structure, applied once per database file, in order. Here SQLite's <code>PRAGMA user_version</code> records how many have run.</dd>
     <dt>Static server rendering</dt><dd>Blazor's simplest mode: components render to HTML on the server per request, with no live connection and no WebAssembly. Forms and links work like a classic website.</dd>
+    <dt>Source generator</dt><dd>Code that runs inside the C# compiler, reads the program being compiled, and adds new source files to it. <code>IIncrementalGenerator</code> is the modern form: a cached pipeline that only redoes the work an edit affects.</dd>
+    <dt>Snapshot testing</dt><dd>Saving a known-good output (here, generated code) to a file and failing when the output changes, so every change is a diff someone approved. Verify does this, with a <code>.received</code> and <code>.verified</code> file pair.</dd>
     <dt>sourceName</dt><dd>The placeholder in a template's files (e.g. <code>TkEndpoint</code>) that <code>dotnet new -n</code> replaces, in file names and contents, together with its lower-case and namespace-safe forms.</dd>
     <dt>Custom hive</dt><dd><code>dotnet new --debug:custom-hive &lt;folder&gt;</code> uses a private template list in that folder, so templates can be tested without installing them for real.</dd>
     <dt>Shannon entropy</dt><dd>The average information per character in a piece of text, in bits. Random keys are high, words are low. The secret scanner uses it to tell generated tokens from ordinary long words.</dd>
@@ -535,10 +570,10 @@ dotnet new tk-endpoint -n Orders --item Order</pre>
 
 <section>
   <div class="eyebrow">10 · Next</div>
-  <h2>Session 7: a Roslyn source generator</h2>
-  <p>Templates create files once. A <b>source generator</b> writes code every time you build: it reads your code inside the compiler and adds more. Session 7 builds one for strongly-typed IDs: write <code>[StronglyTypedId] partial record struct OrderId;</code> and get its value property, parsing and JSON conversion generated. It's an <code>IIncrementalGenerator</code> in a <code>netstandard2.0</code> project, with snapshot tests via <code>Verify.SourceGenerators</code>. Done when a consuming project uses the attribute and the generated code shows up in the IDE.</p>
+  <h2>Session 7 check, then Session 8: transaction categorizer</h2>
+  <p>Session 7 is done once you've seen the generated <code>OrderId</code> in your IDE (see "Seeing the generated code" above). Session 8 starts Project 4, rules-based automations: export 3 months of bank transactions as CSV, define categorisation rules in <code>rules.json</code>, and ask the AI layer once to <i>propose rules</i>, not categories. This is private data, so it should go to Ollama only and stay out of the vault, using the local-only hint and <code>WithoutVaultCapture()</code> built earlier. Done when 90%+ of rows are categorised by rules alone, with AI switched off.</p>
   <p><b>A note from Session 5's import:</b> only 25 of your 322 exported conversations contained any message text; the rest held just ids and dates. The importer now says so.</p>
 </section>
 
-<footer>Last updated after Session 6 · Sun 22 Nov 2026</footer>
+<footer>Last updated after Session 7 · Sun 22 Nov 2026</footer>
 </main>

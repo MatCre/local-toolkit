@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Also write the generated files to obj/generated/, so you can open them on disk. -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Verify.SourceGenerators" />
+    <PackageReference Include="Verify.Xunit" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Referenced two ways at once:
+      - OutputItemType="Analyzer": the compiler runs the generator on THIS project's code, so the
+        sample ids in Sample/ get generated members, exactly as in any project that uses it;
+      - ReferenceOutputAssembly="true": the tests can also create the generator themselves and run
+        it on snippets of code, to snapshot its output and check its error messages.
+    -->
+    <ProjectReference Include="..\..\src\Toolkit.Generators\Toolkit.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+  </ItemGroup>
+
+</Project>
