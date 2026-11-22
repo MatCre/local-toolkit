@@ -183,7 +183,13 @@ internal static class VaultCommands
         }
 
         ConsoleOutput.ProgressDone();
-        ConsoleOutput.Line($"Added {summary.Added:N0} conversations; {summary.AlreadyInVault:N0} were already in the vault.");
+        ConsoleOutput.Line($"Read {summary.Total:N0} conversations. Added {summary.Added:N0}; {summary.AlreadyInVault:N0} were already in the vault.");
+
+        if (summary.NoText > 0)
+        {
+            ConsoleOutput.Line(
+                $"{summary.NoText:N0} had no message text in the export (only ids and dates), so there was nothing to import for them.");
+        }
 
         if (summary.Skipped.Count > 0)
         {

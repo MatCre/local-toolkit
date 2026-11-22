@@ -4,9 +4,13 @@ namespace Toolkit.Vault.Import;
 public sealed record SkippedConversation(string Title, DateTimeOffset CreatedUtc, string Reason);
 
 /// <summary>What an import did.</summary>
-public sealed record ImportSummary(int Added, int AlreadyInVault, IReadOnlyList<SkippedConversation> Skipped)
+/// <param name="Added">New entries created.</param>
+/// <param name="AlreadyInVault">Conversations imported by an earlier run, left alone.</param>
+/// <param name="NoText">Conversations the export holds no message text for: nothing to import.</param>
+/// <param name="Skipped">Conversations refused because they look like they contain a secret.</param>
+public sealed record ImportSummary(int Added, int AlreadyInVault, int NoText, IReadOnlyList<SkippedConversation> Skipped)
 {
-    public int Total => Added + AlreadyInVault + Skipped.Count;
+    public int Total => Added + AlreadyInVault + NoText + Skipped.Count;
 }
 
 /// <summary>
@@ -16,7 +20,8 @@ public sealed record ImportSummary(int Added, int AlreadyInVault, IReadOnlyList<
 /// <remarks>
 /// Safe to run again on a newer export: conversations already in the vault (matched by their
 /// external id) are left alone, and only new ones are added. A conversation that looks like it
-/// contains a secret is skipped and reported, unless secrets are explicitly allowed.
+/// contains a secret is skipped and reported, unless secrets are explicitly allowed. Conversations
+/// the export has no text for are counted, so the summary accounts for every conversation.
 /// </remarks>
 public static class ClaudeExportImporter
 {
@@ -26,12 +31,18 @@ public static class ClaudeExportImporter
         IVaultStore vault, string exportPath, bool allowSecrets = false,
         IProgress<int>? progress = null, CancellationToken cancellationToken = default)
     {
-        int added = 0, existing = 0, seen = 0;
+        int added = 0, existing = 0, noText = 0, seen = 0;
         var skipped = new List<SkippedConversation>();
 
         await foreach (var conversation in ClaudeExportReader.ReadAsync(exportPath, cancellationToken))
         {
             progress?.Report(++seen);
+
+            if (!conversation.HasText)
+            {
+                noText++;
+                continue;
+            }
 
             if (await vault.FindByExternalIdAsync(conversation.ExternalId, cancellationToken) is not null)
             {
@@ -59,6 +70,6 @@ public static class ClaudeExportImporter
             }
         }
 
-        return new ImportSummary(added, existing, skipped);
+        return new ImportSummary(added, existing, noText, skipped);
     }
 }

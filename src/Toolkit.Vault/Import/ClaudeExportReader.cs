@@ -13,6 +13,12 @@ public sealed record ClaudeMessage(bool FromHuman, string Text);
 /// <summary>One conversation from a claude.ai data export.</summary>
 public sealed record ClaudeConversation(string Id, string? Name, DateTimeOffset CreatedUtc, IReadOnlyList<ClaudeMessage> Messages)
 {
+    /// <summary>
+    /// False when the export holds no message text for this conversation, only ids and dates.
+    /// Such a conversation can't be imported: there's nothing to search.
+    /// </summary>
+    public bool HasText => Messages.Count > 0;
+
     /// <summary>Stable id for the vault, so importing the same export twice adds nothing new.</summary>
     public string ExternalId => $"claude:conversation:{Id}";
 
@@ -122,7 +128,7 @@ public static class ClaudeExportReader
         }
     }
 
-    /// <summary>Returns null for anything that isn't a usable conversation, so one odd entry can't stop an import.</summary>
+    /// <summary>Returns null for anything that isn't a conversation (no id), so one odd entry can't stop an import.</summary>
     internal static ClaudeConversation? Parse(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object || String(element, "uuid") is not { } id)
@@ -143,11 +149,8 @@ public static class ClaudeExportReader
             }
         }
 
-        if (messages.Count == 0)
-        {
-            return null;
-        }
-
+        // A conversation with no message text is still returned, with an empty list, so the
+        // importer can count it and say so. Exports can leave the text out of older conversations.
         var created = DateTimeOffset.TryParse(String(element, "created_at"), CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal, out var parsed) ? parsed : DateTimeOffset.UnixEpoch;
 

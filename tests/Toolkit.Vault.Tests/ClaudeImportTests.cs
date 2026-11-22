@@ -82,12 +82,25 @@ public sealed class ClaudeImportTests : IDisposable
     }
 
     [Fact]
-    public async Task Reads_conversations_and_skips_unusable_ones()
+    public async Task Reads_conversations_and_skips_entries_without_an_id()
     {
         var conversations = await ReadAll(WriteFile("conversations.json", ExportJson));
 
-        Assert.Equal(["c1", "c2"], conversations.Select(c => c.Id)); // c3 has no messages, the last has no id
+        Assert.Equal(["c1", "c2", "c3"], conversations.Select(c => c.Id)); // the last has no id
+        Assert.Equal([true, true, false], conversations.Select(c => c.HasText)); // c3 has no message text
         Assert.Equal(new DateTimeOffset(2026, 10, 14, 9, 30, 0, TimeSpan.Zero), conversations[0].CreatedUtc);
+    }
+
+    [Fact]
+    public async Task Counts_conversations_the_export_has_no_text_for()
+    {
+        var vault = NewVault();
+
+        var summary = await ClaudeExportImporter.ImportAsync(vault, WriteZip(ExportJson));
+
+        Assert.Equal(2, summary.Added);
+        Assert.Equal(1, summary.NoText);
+        Assert.Equal(3, summary.Total);
     }
 
     [Fact]
@@ -113,7 +126,7 @@ public sealed class ClaudeImportTests : IDisposable
     [Fact]
     public async Task Reads_the_downloaded_zip_directly()
     {
-        Assert.Equal(2, (await ReadAll(WriteZip(ExportJson))).Count);
+        Assert.Equal(3, (await ReadAll(WriteZip(ExportJson))).Count);
     }
 
     [Fact]
@@ -121,7 +134,7 @@ public sealed class ClaudeImportTests : IDisposable
     {
         var wrapped = WriteFile("conversations.json", $$"""{ "conversations": {{ExportJson}} }""");
 
-        Assert.Equal(2, (await ReadAll(wrapped)).Count);
+        Assert.Equal(3, (await ReadAll(wrapped)).Count);
     }
 
     [Fact]
