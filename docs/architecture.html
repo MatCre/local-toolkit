@@ -132,7 +132,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <span class="chip ok">Session 2 done · router and fallback</span>
     <span class="chip ok">Session 3 done · budget cap and cache</span>
     <span class="chip ok">Session 4 done · answer vault CLI</span>
-    <span class="chip ok">Session 5 built · capture, import, search page</span>
+    <span class="chip ok">Session 5 done · capture, import, search page</span>
+    <span class="chip ok">Session 6 done · dotnet new template pack</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -149,7 +150,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
       <span class="uses">Provider routing, budget cap, caching, fallback to local. Exposes <code>services.AddToolkitAI(config)</code>.</span>
     </div>
     <div class="proj"><h3>Toolkit.Vault</h3><span class="mono">Project 2 · S4–5</span><span class="uses">Adds a middleware layer that saves every answer.</span></div>
-    <div class="proj"><h3>Toolkit.Templates / Generators</h3><span class="mono">Project 3 · S6–7</span><span class="uses">No AI at runtime. Deterministic boilerplate.</span></div>
+    <div class="proj"><h3>Toolkit.Templates / Generators</h3><span class="mono">Project 3 · S6–7</span><span class="uses">No AI at runtime. <code>tk-endpoint</code>, <code>tk-store</code> and <code>tk-cli</code> templates are done; a source generator comes next.</span></div>
     <div class="proj"><h3>Toolkit.Rules</h3><span class="mono">Project 4 · S8–9</span><span class="uses">AI proposes rules once; plain C# runs them.</span></div>
     <div class="proj"><h3>Toolkit.Search</h3><span class="mono">Project 5 · S10–11</span><span class="uses">Uses <code>IEmbeddingGenerator</code>, the embedding sibling of <code>IChatClient</code>.</span></div>
     <div class="proj"><h3>Toolkit.Cards</h3><span class="mono">Project 6 · S12–13</span><span class="uses">Drafts flashcards from vault entries via the AI layer.</span></div>
@@ -295,6 +296,11 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  └─ …Extensions.cs        AddVaultCapture()
 │  ├─ Toolkit.Vault.Web/       Blazor search page (static rendering)
 │  │  └─ Components/Pages/     Home (search), Entry
+│  ├─ Toolkit.Templates/       dotnet new template pack (Project 3)
+│  │  ├─ content/tk-endpoint/  minimal API + validation + tests
+│  │  ├─ content/tk-store/     core + SQLite adapter + contract tests
+│  │  ├─ content/tk-cli/       System.CommandLine tool + tests
+│  │  └─ test-templates.ps1    generate each one, run its tests
 │  ├─ Toolkit.Vault.Cli/       the `vault` command
 │  │  ├─ Program.cs            commands and options
 │  │  ├─ VaultCommands.cs      what each command does
@@ -461,6 +467,31 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
   <p><b>Why not switch to EF Core now?</b> EF Core makes swapping databases easy for plain tables, but it doesn't hide full-text search: each database has its own, and EF Core would need raw SQL for it either way. Dapper keeps the SQL visible while you learn. The interfaces mean EF Core can come later, one adapter at a time.</p>
 </section>
 
+<section>
+  <div class="eyebrow">08c · Code generators</div>
+  <h2>Templates: boilerplate without an AI call</h2>
+  <p>Project 3 replaces "write me the boilerplate for…" prompts with tools that produce the same code every time, instantly and for free. Session 6 built a <code>dotnet new</code> template pack, <code>src/Toolkit.Templates</code>, for the three things this repo kept scaffolding.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Template</th><th>Command</th><th>What you get</th></tr></thead>
+    <tbody>
+      <tr><td><code>tk-endpoint</code></td><td><code>dotnet new tk-endpoint -n Orders --item Order</code></td><td>A minimal API at <code>/orders</code> (list, get, create, delete). Validation is .NET's built-in <code>AddValidation()</code> with <code>[Required]</code> and <code>[Range]</code>, returning 400 with an error per field. Four integration tests use <code>WebApplicationFactory</code>.</td></tr>
+      <tr><td><code>tk-store</code></td><td><code>dotnet new tk-store -n Notes --item Note</code></td><td>The ports-and-adapters shape from this repo: a core with <code>INoteStore</code> and no database code, a SQLite adapter with Dapper and migrations, and contract tests.</td></tr>
+      <tr><td><code>tk-cli</code></td><td><code>dotnet new tk-cli -n Greeter</code></td><td>A System.CommandLine tool, packable as a global tool, with colour only on a real terminal. Tests run commands in memory and check output and exit codes.</td></tr>
+    </tbody>
+  </table></div>
+  <h3>How a template works</h3>
+  <ol class="steps">
+    <li><div><b>Each template is a real, buildable solution</b> under <code>content/</code>, so it can be developed and tested like any project.</div></li>
+    <li><div><b><code>.template.config/template.json</code> lists what to replace.</b> <code>sourceName</code> (<code>TkEndpoint</code>) becomes the <code>-n</code> name in file names and code. Its built-in lower-case form (<code>tkendpoint</code>) becomes the route. Parameters like <code>--item</code> replace <code>TkItem</code>, and a casing generator handles <code>tkitem</code>.</div></li>
+    <li><div><b>Template sources don't inherit this repo's settings.</b> A <code>Directory.Build.props</code> and <code>Directory.Packages.props</code> inside <code>content/</code> stop the repo's shared settings applying, so each template builds exactly as it will after <code>dotnet new</code> copies it elsewhere. Package versions are written inline.</div></li>
+    <li><div><b>The pack is a NuGet package</b> (<code>PackageType=Template</code>) with no compiled code, installed with <code>dotnet new install</code>.</div></li>
+    <li><div><b><code>test-templates.ps1</code> checks them</b>: it installs the pack into a private template folder (<code>--debug:custom-hive</code>), generates each template with and without options, and runs its tests. It passed for all 4 cases, which is Session 6's done-when check.</div></li>
+  </ol>
+<pre>dotnet pack src/Toolkit.Templates -o artifacts
+dotnet new install artifacts/LocalToolkit.Templates.0.1.0.nupkg
+dotnet new tk-endpoint -n Orders --item Order</pre>
+</section>
+
 <section class="callout">
   <h3>PATH note: two dotnet installs</h3>
   <p><code>C:\Program Files\dotnet</code> (SDKs 8 and 10) comes before the dotnetup install (which also has 11.0.100) on PATH, so a plain <code>dotnet</code> picks the old one and fails in this repo with an SDK-not-found error. To fix it, move <code>%LOCALAPPDATA%\dotnetup\dotnet</code> above <code>C:\Program Files\dotnet</code> in your user PATH, or point your IDE's .NET path at the dotnetup folder.</p>
@@ -484,6 +515,8 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
     <dt>IToolkitChatLayer</dt><dd>The AI layer's extension point. Another package registers one in DI, and <code>AddToolkitAI</code> places it between the cache and the budget check. Vault capture uses it, so the AI core never references the vault.</dd>
     <dt>Schema migration</dt><dd>A numbered change to a database's structure, applied once per database file, in order. Here SQLite's <code>PRAGMA user_version</code> records how many have run.</dd>
     <dt>Static server rendering</dt><dd>Blazor's simplest mode: components render to HTML on the server per request, with no live connection and no WebAssembly. Forms and links work like a classic website.</dd>
+    <dt>sourceName</dt><dd>The placeholder in a template's files (e.g. <code>TkEndpoint</code>) that <code>dotnet new -n</code> replaces, in file names and contents, together with its lower-case and namespace-safe forms.</dd>
+    <dt>Custom hive</dt><dd><code>dotnet new --debug:custom-hive &lt;folder&gt;</code> uses a private template list in that folder, so templates can be tested without installing them for real.</dd>
     <dt>Shannon entropy</dt><dd>The average information per character in a piece of text, in bits. Random keys are high, words are low. The secret scanner uses it to tell generated tokens from ordinary long words.</dd>
     <dt>Ports and adapters</dt><dd>Also called hexagonal architecture. The core defines interfaces for what it needs from the outside world (ports); separate projects implement them for a particular technology (adapters). Swapping technology means swapping adapters.</dd>
     <dt>Composition root</dt><dd>The one place in an app where objects are built and joined together, usually <code>Program.cs</code>. It's the only code that names concrete classes such as <code>SqliteVaultStore</code>; everything else uses the interfaces.</dd>
@@ -502,9 +535,10 @@ IVaultStore Store(...) => new SqliteVaultStore(path);   // ← storage adapter</
 
 <section>
   <div class="eyebrow">10 · Next</div>
-  <h2>Session 5 check, then Session 6: dotnet new templates</h2>
-  <p>Session 5 is done when a question you asked Claude last month turns up in a vault search. Request your export (claude.ai, Settings → Privacy → Export data), run <code>vault import claude</code> on the zip, and search for something you remember asking. Session 6 starts Project 3: a <code>dotnet new</code> template pack for the things you scaffold most, so boilerplate comes from a template instead of an AI call.</p>
+  <h2>Session 7: a Roslyn source generator</h2>
+  <p>Templates create files once. A <b>source generator</b> writes code every time you build: it reads your code inside the compiler and adds more. Session 7 builds one for strongly-typed IDs: write <code>[StronglyTypedId] partial record struct OrderId;</code> and get its value property, parsing and JSON conversion generated. It's an <code>IIncrementalGenerator</code> in a <code>netstandard2.0</code> project, with snapshot tests via <code>Verify.SourceGenerators</code>. Done when a consuming project uses the attribute and the generated code shows up in the IDE.</p>
+  <p><b>A note from Session 5's import:</b> only 25 of your 322 exported conversations contained any message text; the rest held just ids and dates. The importer now says so.</p>
 </section>
 
-<footer>Last updated after Session 5 · Sat 21 Nov 2026</footer>
+<footer>Last updated after Session 6 · Sun 22 Nov 2026</footer>
 </main>

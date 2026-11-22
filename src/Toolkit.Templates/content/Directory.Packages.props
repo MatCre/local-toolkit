@@ -1,0 +1,6 @@
+<Project>
+  <!-- Template sources give package versions inline, like any standalone project. Not packed. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

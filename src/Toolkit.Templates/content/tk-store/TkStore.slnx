@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TkStore/TkStore.csproj" />
+    <Project Path="src/TkStore.Sqlite/TkStore.Sqlite.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TkStore.Tests/TkStore.Tests.csproj" />
+  </Folder>
+</Solution>

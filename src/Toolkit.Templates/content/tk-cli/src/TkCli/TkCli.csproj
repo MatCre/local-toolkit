@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>tkcli</AssemblyName>
+
+    <!--
+      Packable as a .NET global tool, so the command runs from any folder once installed.
+      See README.md for the pack and install commands.
+    -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>tkcli</ToolCommandName>
+    <PackageId>TkCli</PackageId>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="3.0.0" />
+  </ItemGroup>
+
+</Project>

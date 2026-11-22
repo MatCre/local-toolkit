@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A template package: no code of its own, just the folders under content/. Each folder with a
+    .template.config/template.json is one `dotnet new` template.
+
+    Install and use: see README.md next to this file. (XML comments can't contain two hyphens in a
+    row, so command lines with options don't belong in here.)
+  -->
+  <PropertyGroup>
+    <PackageType>Template</PackageType>
+    <PackageId>LocalToolkit.Templates</PackageId>
+    <Version>0.1.0</Version>
+    <Title>Local toolkit templates</Title>
+    <Description>dotnet new templates: tk-endpoint (minimal API + validation + tests), tk-store (core + SQLite adapter + contract tests), tk-cli (System.CommandLine tool).</Description>
+    <Authors>local-toolkit</Authors>
+    <PackageTags>dotnet-new;templates</PackageTags>
+
+    <!-- Pack the content folders as they are; there is no compiled output. -->
+    <IncludeContentInPack>true</IncludeContentInPack>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+
+    <!-- Don't compile the template sources as part of this project. -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="content\tk-*\**" Exclude="content\**\bin\**;content\**\obj\**;content\**\.vs\**" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "local-toolkit",
+  "classifications": ["Library", "Data", "SQLite", "Test"],
+  "identity": "LocalToolkit.Templates.Store",
+  "name": "Toolkit: core library + SQLite adapter + contract tests",
+  "description": "Ports and adapters: a core library with a store interface and no database code, a SQLite adapter using Dapper with schema migrations, and contract tests any future adapter must pass.",
+  "shortName": "tk-store",
+  "sourceName": "TkStore",
+  "preferNameDirectory": true,
+  "tags": { "language": "C#", "type": "solution" },
+  "symbols": {
+    "item": {
+      "type": "parameter",
+      "datatype": "text",
+      "defaultValue": "Item",
+      "replaces": "TkItem",
+      "fileRename": "TkItem",
+      "description": "Name of one thing the store holds, in PascalCase, e.g. Note."
+    },
+    "itemLower": {
+      "type": "generated",
+      "generator": "casing",
+      "parameters": { "source": "item", "toLower": true },
+      "replaces": "tkitem"
+    }
+  }
+}

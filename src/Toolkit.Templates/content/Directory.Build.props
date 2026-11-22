@@ -1,0 +1,6 @@
+<Project>
+  <!--
+    Stops the repo's Directory.Build.props from applying to the template sources, so they build
+    exactly as they will after `dotnet new` copies them somewhere else. Not packed.
+  -->
+</Project>

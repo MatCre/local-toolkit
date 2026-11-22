@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TkEndpoint.Api/TkEndpoint.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TkEndpoint.Tests/TkEndpoint.Tests.csproj" />
+  </Folder>
+</Solution>

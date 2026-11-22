@@ -4,6 +4,7 @@
     <Project Path="src/Toolkit.AI.Sqlite/Toolkit.AI.Sqlite.csproj" />
     <Project Path="src/Toolkit.AI/Toolkit.AI.csproj" />
     <Project Path="src/Toolkit.Storage.Sqlite/Toolkit.Storage.Sqlite.csproj" />
+    <Project Path="src/Toolkit.Templates/Toolkit.Templates.csproj" />
     <Project Path="src/Toolkit.Vault.AI/Toolkit.Vault.AI.csproj" />
     <Project Path="src/Toolkit.Vault.Cli/Toolkit.Vault.Cli.csproj" />
     <Project Path="src/Toolkit.Vault.Sqlite/Toolkit.Vault.Sqlite.csproj" />

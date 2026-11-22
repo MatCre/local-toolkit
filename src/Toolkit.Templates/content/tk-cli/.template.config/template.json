@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "local-toolkit",
+  "classifications": ["Console", "CLI", "Tool", "Test"],
+  "identity": "LocalToolkit.Templates.Cli",
+  "name": "Toolkit: command-line tool (System.CommandLine) with tests",
+  "description": "A System.CommandLine console app, packable as a .NET global tool, with colour that switches off when output is redirected or NO_COLOR is set, and tests that run commands in memory.",
+  "shortName": "tk-cli",
+  "sourceName": "TkCli",
+  "preferNameDirectory": true,
+  "tags": { "language": "C#", "type": "solution" }
+}
