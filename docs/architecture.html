@@ -134,7 +134,8 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <span class="chip ok">Session 4 done · answer vault CLI</span>
     <span class="chip ok">Session 5 done · capture, import, search page</span>
     <span class="chip ok">Session 6 done · dotnet new template pack</span>
-    <span class="chip ok">Session 7 built · strongly-typed id source generator</span>
+    <span class="chip ok">Session 7 done · strongly-typed id source generator</span>
+    <span class="chip ok">Session 8 built · transaction categorizer</span>
     <span class="chip">.NET 11 · SDK 11.0.100</span>
     <span class="chip">Ollama 0.40 · qwen2.5-coder:7b</span>
   </div>
@@ -152,7 +153,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     </div>
     <div class="proj"><h3>Toolkit.Vault</h3><span class="mono">Project 2 · S4–5</span><span class="uses">Adds a middleware layer that saves every answer.</span></div>
     <div class="proj"><h3>Toolkit.Templates / Generators</h3><span class="mono">Project 3 · S6–7</span><span class="uses">No AI at runtime. <code>tk-endpoint</code>, <code>tk-store</code> and <code>tk-cli</code> templates, plus a <code>[StronglyTypedId]</code> source generator.</span></div>
-    <div class="proj"><h3>Toolkit.Rules</h3><span class="mono">Project 4 · S8–9</span><span class="uses">AI proposes rules once; plain C# runs them.</span></div>
+    <div class="proj"><h3>Toolkit.Rules</h3><span class="mono">Project 4 · S8–9</span><span class="uses">AI proposes rules once; plain C# runs them. <code>rules categorize</code> never calls a model at all.</span></div>
     <div class="proj"><h3>Toolkit.Search</h3><span class="mono">Project 5 · S10–11</span><span class="uses">Uses <code>IEmbeddingGenerator</code>, the embedding sibling of <code>IChatClient</code>.</span></div>
     <div class="proj"><h3>Toolkit.Cards</h3><span class="mono">Project 6 · S12–13</span><span class="uses">Drafts flashcards from vault entries via the AI layer.</span></div>
   </div>
@@ -307,6 +308,15 @@ footer { color: var(--muted); font-size: 0.82rem; }
 │  │  ├─ content/tk-store/     core + SQLite adapter + contract tests
 │  │  ├─ content/tk-cli/       System.CommandLine tool + tests
 │  │  └─ test-templates.ps1    generate each one, run its tests
+│  ├─ Toolkit.Rules/           core (Project 4): no AI package, no database
+│  │  ├─ Transaction.cs, CategoryRule.cs, RuleSet.cs
+│  │  ├─ BankCsvReader.cs, CsvLine.cs     reads a bank's exported CSV
+│  │  ├─ RuleSetFile.cs                   rules.json load/save
+│  │  └─ RuleProposal.cs                  prompt + reply parser, no IChatClient
+│  ├─ Toolkit.Rules.Cli/       the `rules` command
+│  │  ├─ Program.cs            categorize / propose / apply
+│  │  ├─ RulesCommands.cs      what each command does; builds the AI host only for propose
+│  │  └─ appsettings.json      Ollama only — no cloud provider configured at all
 │  ├─ Toolkit.Vault.Cli/       the `vault` command
 │  │  ├─ Program.cs            commands and options
 │  │  ├─ VaultCommands.cs      what each command does
@@ -322,6 +332,11 @@ footer { color: var(--muted); font-size: 0.82rem; }
       ├─ BudgetChatClientTests.cs
       ├─ ResponseCacheTests.cs
       └─ Fakes.cs              scripted fake providers
+   └─ Toolkit.Rules.Tests/     xUnit, core only — the Cli composition root isn't unit tested, same as vault's
+      ├─ CategoryRuleAndRuleSetTests.cs
+      ├─ CsvLineTests.cs, BankCsvReaderTests.cs
+      ├─ RuleSetFileTests.cs
+      └─ RuleProposalTests.cs       prompt building + parsing messy model replies
    └─ Toolkit.Vault.Tests/     xUnit
       ├─ VaultStoreContractTests.cs  what any IVaultStore must do
       ├─ SqliteVaultStoreTests.cs    runs the contract on SQLite
@@ -525,6 +540,68 @@ dotnet new tk-endpoint -n Orders --item Order</pre>
   <p><b>Seeing the generated code:</b> in Visual Studio or Rider, open the test project's Dependencies → Analyzers → Toolkit.Generators → StronglyTypedIdGenerator, or press F12 on <code>OrderId.New()</code>. On disk, <code>EmitCompilerGeneratedFiles</code> writes copies to <code>tests/Toolkit.Generators.Tests/obj/Debug/net11.0/generated/</code>.</p>
 </section>
 
+<section>
+  <div class="eyebrow">08d · Rules-based automations</div>
+  <h2>Session 8: a transaction categorizer, AI proposes once</h2>
+  <p>Project 4 starts with the smallest useful shape: a rule is a literal substring and a category. <code>rules categorize</code>
+  reads a bank's exported CSV, runs every row past the rules in <code>rules.json</code>, first match wins, and reports what fraction
+  matched — <b>no model is involved, ever, in this command.</b> <code>rules propose</code> is the only command that calls AI: it
+  finds the distinct descriptions no rule matches yet, asks the local model once for a rule per payee, and <i>writes</i> them to
+  <code>rules.proposed.json</code> for review. A separate <code>rules apply</code> command — no AI, ever — merges that exact file
+  into <code>rules.json</code>. The model never sees a row's amount or date, and it's never asked to categorise a transaction —
+  only to propose a pattern and a category, which plain C# then applies to every matching row, including ones the model never saw.</p>
+  <p><b>Why propose and apply are two commands, not one with a flag:</b> the first version had <code>propose --apply</code> call the
+  model and commit in the same step. That broke the one guarantee this feature exists to provide — review before commit — because
+  running <code>propose</code> once to preview and <code>propose --apply</code> again to commit are two separate processes, so the
+  model is asked twice and can answer differently each time. One test run filed "PAYPAL" under "Finance" on one call and "Online
+  Shopping" on the next: a user who reviewed the first list would have committed the second, unreviewed, list. Writing the proposal
+  to a file and having <code>apply</code> read that exact file, never the model, closes the gap: a diff of what was written for
+  review against what was committed now comes back identical, by construction.</p>
+  <div class="legend"><span class="lg-built">Built</span><span class="lg-local">Runs on your machine</span></div>
+  <div class="pipe">
+    <div class="layer caller"><span class="name">rules propose --csv ... --rules ...</span><span class="when">Toolkit.Rules.Cli</span>
+      <span class="what">Builds a minimal host with only <code>AddToolkitAI(config)</code> — <code>CallLog</code> and <code>Cache</code>
+      are off in its <code>appsettings.json</code>, since a CLI that makes one call per run doesn't need either. No storage
+      adapter, so no SQLite reference at all.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">RuleProposalPrompt.Build / .Parse</span><span class="when">Toolkit.Rules</span>
+      <span class="what">Pure string in, pure string out: no <code>IChatClient</code> here, so these are unit tested without a model.
+      <code>Parse</code> takes the first <code>[</code> to the last <code>]</code> in the reply before decoding JSON, because a
+      local model asked for "only JSON" still sometimes wraps it in a markdown fence or a sentence.</span></div>
+    <div class="arrow"></div>
+    <div class="layer built"><span class="name">ChatOptions().WithoutVaultCapture() + RoutingHints.LocalOnly</span><span class="when">one call</span>
+      <span class="what">Both hints from earlier sessions, applied directly rather than through a new project: there's one call
+      site, not a cross-cutting concern, so a fourth AI-bridge project would have been the wrong shape.</span></div>
+    <div class="arrow"></div>
+    <div class="layer local"><span class="name">Ollama → qwen2.5-coder:7b</span><span class="when">local only</span>
+      <span class="what">The Cli's own <code>appsettings.json</code> lists <i>only</i> <code>ollama</code> in <code>ProviderOrder</code> —
+      no cloud provider is configured for this tool at all, so bank data can't reach one even if a hint were dropped somewhere.</span></div>
+    <div class="arrow"></div>
+    <div class="layer caller"><span class="name">rules apply --rules ...</span><span class="when">separate command</span>
+      <span class="what"><code>RuleSet.With</code> merges <code>rules.proposed.json</code> into <code>rules.json</code>, deduplicating
+      by pattern. No host is built for this command: it never touches <code>IChatClient</code>.</span></div>
+  </div>
+  <h3>Tested end to end, against real local Ollama</h3>
+  <p>A synthetic 3-month CSV (100 rows: 13 weeks of groceries, fuel, rent, subscriptions and salary, plus 25 one-off purchases
+  each appearing once) stood in for a real export, which hadn't arrived yet. Starting from an empty <code>rules.json</code>:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Step</th><th>Command</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td><code>rules categorize</code></td><td>0 of 100 rows (0%) — no rules yet</td></tr>
+      <tr><td class="num">2</td><td><code>rules propose --limit 40</code></td><td>One call to Ollama proposed all 38 distinct unmatched payees, written to <code>rules.proposed.json</code></td></tr>
+      <tr><td class="num">3</td><td><code>rules apply</code></td><td>No AI call. <code>rules.json</code> now byte-identical to the reviewed file (checked with <code>diff</code>)</td></tr>
+      <tr><td class="num">4</td><td><code>rules categorize</code></td><td><b>100 of 100 rows (100%), AI switched off</b></td></tr>
+    </tbody>
+  </table></div>
+  <p>Comfortably past the done-when bar of 90%. The model still isn't perfect at category <i>names</i> — across runs it filed the
+  same payee under slightly different labels ("Auto Repair" vs "Automotive", "Online Shopping" vs "Finance" for PayPal) — but
+  that's wording, not matching: <code>CategoryRule.Matches</code> is a plain substring check, the one part of this feature that
+  was never asked to use judgement.</p>
+  <p><b>Still open for Session 9:</b> this ran on synthetic data because a real bank export hadn't been provided yet. The next
+  run against an actual 3-month CSV is the real test of whether 38 proposed rules' worth of categories generalise, or whether a
+  real statement's payee formatting needs another pass.</p>
+</section>
+
 <section class="callout">
   <h3>PATH note: two dotnet installs</h3>
   <p><code>C:\Program Files\dotnet</code> (SDKs 8 and 10) comes before the dotnetup install (which also has 11.0.100) on PATH, so a plain <code>dotnet</code> picks the old one and fails in this repo with an SDK-not-found error. To fix it, move <code>%LOCALAPPDATA%\dotnetup\dotnet</code> above <code>C:\Program Files\dotnet</code> in your user PATH, or point your IDE's .NET path at the dotnetup folder.</p>
@@ -570,10 +647,15 @@ dotnet new tk-endpoint -n Orders --item Order</pre>
 
 <section>
   <div class="eyebrow">10 · Next</div>
-  <h2>Session 7 check, then Session 8: transaction categorizer</h2>
-  <p>Session 7 is done once you've seen the generated <code>OrderId</code> in your IDE (see "Seeing the generated code" above). Session 8 starts Project 4, rules-based automations: export 3 months of bank transactions as CSV, define categorisation rules in <code>rules.json</code>, and ask the AI layer once to <i>propose rules</i>, not categories. This is private data, so it should go to Ollama only and stay out of the vault, using the local-only hint and <code>WithoutVaultCapture()</code> built earlier. Done when 90%+ of rows are categorised by rules alone, with AI switched off.</p>
+  <h2>Session 8 built, pending your real export; then Session 9</h2>
+  <p><code>rules categorize</code> and <code>rules propose</code> exist and pass their done-when check (see 08d above) on synthetic
+  data. What's still missing is <b>your actual 3 months of bank transactions as a CSV</b> — export it from your bank's website
+  (usually under the account's transactions page, as "Export" or "Download") and point <code>--csv</code> at it. Running
+  <code>rules propose --apply</code> against it, then <code>rules categorize</code>, is the real done-when check: 90%+ of your
+  rows categorised by rules alone, AI switched off. Session 9, still Project 4, follows from whatever that run turns up —
+  payee formats the synthetic data didn't cover, multiple accounts, or a scheduled re-run as new transactions arrive.</p>
   <p><b>A note from Session 5's import:</b> only 25 of your 322 exported conversations contained any message text; the rest held just ids and dates. The importer now says so.</p>
 </section>
 
-<footer>Last updated after Session 7 · Sun 22 Nov 2026</footer>
+<footer>Last updated after Session 8 · Mon 23 Nov 2026</footer>
 </main>

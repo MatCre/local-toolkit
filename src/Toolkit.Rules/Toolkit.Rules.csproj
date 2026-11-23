@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rules-based automations, core: transactions, rules and the matching engine, plus the pure
+    prompt/parse pair used to turn a one-off AI call into rule proposals. No AI package and no
+    database package: the AI call itself lives in Toolkit.Rules.Cli, the composition root.
+  -->
+
+</Project>

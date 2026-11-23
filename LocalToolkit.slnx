@@ -4,6 +4,8 @@
     <Project Path="src/Toolkit.AI.Sqlite/Toolkit.AI.Sqlite.csproj" />
     <Project Path="src/Toolkit.AI/Toolkit.AI.csproj" />
     <Project Path="src/Toolkit.Generators/Toolkit.Generators.csproj" />
+    <Project Path="src/Toolkit.Rules.Cli/Toolkit.Rules.Cli.csproj" />
+    <Project Path="src/Toolkit.Rules/Toolkit.Rules.csproj" />
     <Project Path="src/Toolkit.Storage.Sqlite/Toolkit.Storage.Sqlite.csproj" />
     <Project Path="src/Toolkit.Templates/Toolkit.Templates.csproj" />
     <Project Path="src/Toolkit.Vault.AI/Toolkit.Vault.AI.csproj" />
@@ -15,6 +17,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Toolkit.AI.Tests/Toolkit.AI.Tests.csproj" />
     <Project Path="tests/Toolkit.Generators.Tests/Toolkit.Generators.Tests.csproj" />
+    <Project Path="tests/Toolkit.Rules.Tests/Toolkit.Rules.Tests.csproj" />
     <Project Path="tests/Toolkit.Vault.Tests/Toolkit.Vault.Tests.csproj" />
   </Folder>
 </Solution>

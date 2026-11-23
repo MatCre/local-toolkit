@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rules</AssemblyName>
+    <RootNamespace>Toolkit.Rules.Cli</RootNamespace>
+    <UserSecretsId>local-toolkit-rules</UserSecretsId>
+
+    <!-- Packable as a .NET tool, so `rules` can be installed and run from any folder. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>rules</ToolCommandName>
+    <PackageId>Toolkit.Rules.Cli</PackageId>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <!--
+    Categorising is plain C# against Toolkit.Rules and needs none of this. Proposing needs an
+    IChatClient, so this is the only command that builds a host: Toolkit.AI for the pipeline,
+    and Toolkit.Vault.AI only for the WithoutVaultCapture() hint, so a payee list never risks
+    being saved by a vault-capture layer running elsewhere in the same app.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Toolkit.Rules\Toolkit.Rules.csproj" />
+    <ProjectReference Include="..\Toolkit.AI\Toolkit.AI.csproj" />
+    <ProjectReference Include="..\Toolkit.Vault.AI\Toolkit.Vault.AI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copy config next to the .exe so the host finds it via AppContext.BaseDirectory. -->
+    <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
