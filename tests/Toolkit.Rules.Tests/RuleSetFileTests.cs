@@ -43,6 +43,30 @@ public class RuleSetFileTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData("""[{"pattern": "COUNTDOWN", "category": "Groceries"},]""", "isn't valid rules JSON")]
+    [InlineData("""[{"category": "Groceries"}]""", "rule 1: has no \"pattern\"")]
+    [InlineData("""[{"pattern": "KMART", "category": "Shopping"}, {"pattern": "UBER"}]""", "rule 2: (\"UBER\") has no \"category\"")]
+    [InlineData("""[{"pattern": "(COUNTDOWN", "category": "Groceries", "isRegex": true}]""", "isn't a valid regular expression")]
+    [InlineData("""[null]""", "rule 1: is null")]
+    public void A_broken_file_is_reported_with_the_file_and_rule(string json, string expected)
+    {
+        File.WriteAllText(_path, json);
+
+        var ex = Assert.Throws<InvalidDataException>(() => RuleSetFile.Load(_path));
+
+        Assert.Contains(_path, ex.Message);
+        Assert.Contains(expected, ex.Message);
+    }
+
+    [Fact]
+    public void A_plain_pattern_with_regex_characters_is_fine()
+    {
+        File.WriteAllText(_path, """[{"pattern": "UBER *TRIP (", "category": "Transport"}]""");
+
+        Assert.Single(RuleSetFile.Load(_path).Rules); // only regex rules are compiled and checked
+    }
+
     public void Dispose()
     {
         if (File.Exists(_path))

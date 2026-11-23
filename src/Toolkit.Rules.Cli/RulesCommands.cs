@@ -12,17 +12,33 @@ namespace Toolkit.Rules.Cli;
 /// <summary>What each command does. Each returns the process exit code: 0 for success, 1 for a problem.</summary>
 internal static class RulesCommands
 {
-    public const string DefaultRulesPath = "data/rules.json";
-    public const string DefaultProposedPath = "data/rules.proposed.json";
+    private const int MaxSkippedRowsShown = 5;
+
+    /// <summary>
+    /// One folder per user, the same from wherever `rules` is run: %LOCALAPPDATA%\local-toolkit on
+    /// Windows, next to the vault. A path relative to the current folder would give each folder its
+    /// own, empty, rules file.
+    /// </summary>
+    private static readonly string DataDirectory =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "local-toolkit");
+
+    public static string DefaultRulesPath { get; } = Path.Combine(DataDirectory, "rules.json");
+
+    public static string DefaultProposedPath { get; } = Path.Combine(DataDirectory, "rules.proposed.json");
 
     public static Task<int> CategorizeAsync(FileInfo csv, string rulesPath, CancellationToken ct)
     {
-        if (!TryReadTransactions(csv, out var transactions, out var error))
+        if (!TryReadTransactions(csv, out var transactions, out var error)
+            || !TryLoadRules(rulesPath, out var ruleSet, out error))
         {
             return Task.FromResult(ConsoleOutput.Error(error));
         }
 
-        var ruleSet = RuleSetFile.Load(rulesPath);
+        if (!File.Exists(rulesPath))
+        {
+            ConsoleOutput.Line(ConsoleOutput.Dim($"No rules file at {rulesPath} yet, so every row is unmatched."));
+        }
+
         var summary = ruleSet.Categorize(transactions);
         PrintSummary(summary, ruleSet.Rules.Count, rulesPath);
         return Task.FromResult(0);
@@ -30,12 +46,12 @@ internal static class RulesCommands
 
     public static async Task<int> ProposeAsync(FileInfo csv, string rulesPath, string proposedPath, int limit, CancellationToken ct)
     {
-        if (!TryReadTransactions(csv, out var transactions, out var error))
+        if (!TryReadTransactions(csv, out var transactions, out var error)
+            || !TryLoadRules(rulesPath, out var ruleSet, out error))
         {
             return ConsoleOutput.Error(error);
         }
 
-        var ruleSet = RuleSetFile.Load(rulesPath);
         var summary = ruleSet.Categorize(transactions);
         var unmatched = summary.UnmatchedDescriptions(limit);
 
@@ -77,7 +93,7 @@ internal static class RulesCommands
             ConsoleOutput.Line($"  \"{rule.Pattern}\" -> {rule.Category}");
         }
 
-        ConsoleOutput.Line(ConsoleOutput.Dim($"\nReview them, then run: rules apply --rules {rulesPath}"));
+        ConsoleOutput.Line(ConsoleOutput.Dim("\nReview them (edit or delete lines in that file if needed), then run: rules apply"));
         return 0;
     }
 
@@ -88,10 +104,13 @@ internal static class RulesCommands
             return Task.FromResult(ConsoleOutput.Error($"No proposed rules at {proposedPath}. Run \"rules propose\" first."));
         }
 
-        var proposed = RuleSetFile.Load(proposedPath);
-        var current = RuleSetFile.Load(rulesPath);
-        var merged = current.With(proposed.Rules);
+        if (!TryLoadRules(proposedPath, out var proposed, out var error)
+            || !TryLoadRules(rulesPath, out var current, out error))
+        {
+            return Task.FromResult(ConsoleOutput.Error(error));
+        }
 
+        var merged = current.With(proposed.Rules);
         RuleSetFile.Save(rulesPath, merged);
 
         var added = merged.Rules.Count - current.Rules.Count;
@@ -112,9 +131,10 @@ internal static class RulesCommands
             return false;
         }
 
+        CsvReadResult result;
         try
         {
-            transactions = BankCsvReader.Read(csv.FullName);
+            result = BankCsvReader.Read(csv.FullName);
         }
         catch (InvalidDataException ex)
         {
@@ -122,7 +142,45 @@ internal static class RulesCommands
             return false;
         }
 
+        if (result.Skipped.Count > 0)
+        {
+            ConsoleOutput.Line(ConsoleOutput.Dim($"Skipped {result.Skipped.Count} row(s) that couldn't be read:"));
+            foreach (var row in result.Skipped.Take(MaxSkippedRowsShown))
+            {
+                ConsoleOutput.Line(ConsoleOutput.Dim($"  line {row.LineNumber}: {row.Reason}"));
+            }
+
+            if (result.Skipped.Count > MaxSkippedRowsShown)
+            {
+                ConsoleOutput.Line(ConsoleOutput.Dim($"  …and {result.Skipped.Count - MaxSkippedRowsShown} more"));
+            }
+        }
+
+        if (result.Transactions.Count == 0)
+        {
+            error = $"No rows could be read from {csv.Name}.";
+            return false;
+        }
+
+        transactions = result.Transactions;
         return true;
+    }
+
+    /// <summary>Loads a rules file, turning a broken one into a message that names the file and the rule.</summary>
+    private static bool TryLoadRules(string path, out RuleSet ruleSet, out string error)
+    {
+        try
+        {
+            ruleSet = RuleSetFile.Load(path);
+            error = "";
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            ruleSet = RuleSet.Empty;
+            error = ex.Message;
+            return false;
+        }
     }
 
     private static void PrintSummary(CategorizationSummary summary, int ruleCount, string rulesPath)
@@ -130,11 +188,12 @@ internal static class RulesCommands
         ConsoleOutput.Line(
             $"{summary.Categorized:N0} of {summary.Total:N0} rows categorised by {ruleCount} rule(s) " +
             $"({summary.CategorizedRate:P0}), AI switched off.");
+        ConsoleOutput.Line(ConsoleOutput.Dim($"Rules: {rulesPath}"));
 
         if (summary.Uncategorized.Count > 0)
         {
             ConsoleOutput.Line(ConsoleOutput.Dim(
-                $"{summary.Uncategorized.Count:N0} unmatched. Try: rules propose --csv ... --rules {rulesPath}"));
+                $"{summary.Uncategorized.Count:N0} unmatched. Try: rules propose --csv <same file>"));
         }
     }
 
